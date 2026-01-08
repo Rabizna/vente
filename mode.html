@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enregistrer élèves</title>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script> -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            height: 10%;
+            background-color: rgb(8, 57, 64);
+            color: rgba(1, 9, 23, 0);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .header img {
+            height: 80%;
+            margin-right: 10px;
+        }
+
+        .title-box {
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            background-color: black;
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .text-left {
+            color: white;
+            font-size: 20px;
+            font-family: Arial, sans-serif;
+            margin-right: 10px;
+        }
+        .box {
+            background-color: rgb(243,117,33);
+            padding: 5px 15px;
+            font-size: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            display: flex;
+            height: 90%;
+        }
+
+        .menu {
+            width: 20% !important;
+            background-color: rgb(8, 57, 64);
+            padding: 10px;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .content {
+            width: 80%;
+            padding: 20px 10px;
+            background-color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        .menu-items {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            text-transform: uppercase;
+        }
+
+        .menu label {
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .menu label a {
+            text-decoration: none;
+            color: white;
+        }
+
+        .menu label.active,
+        .menu label:hover {
+            background-color: rgb(243,117,33);
+            color: black;
+            font-weight: bold;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .user-info span {
+            color: white !important;
+        }
+
+        .user-info img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #fff;
+        }
+
+
+        .form-title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: rgb(8, 57, 64);
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid rgb(243,117,33);
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .form-row {
+            display: flex;
+            align-items: center;
+            min-height: 35px;
+            gap: 10px;
+        }
+
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+            max-width: 250px;
+            font-size: 14px;
+            transition: border 0.3s ease;
+        }
+
+        input:focus, select:focus {
+            border-color: rgb(243,117,33);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(243,117,33,0.2);
+        }
+
+        .logout-container {
+            margin-top: auto;
+            padding: 20px 0;
+            text-align: center;
+        }
+
+        .logout-btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #d9534f;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: 0.3s ease;
+            width: 80%;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background-color: #c9302c;
+            transform: scale(1.05);
+        }
+
+        .abc {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            width: 100%;
+        }
+
+        .form-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex-grow: 1;
+        }
+
+        .form-row1 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-row1 label {
+            min-width: 200px;
+            text-align: left;
+        }
+
+        .photo-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-left: 20px;
+            align-self: flex-end;
+            min-height: 130px;
+            border: none;
+            border-radius: 5px;
+        }
+        .photo-panel img {
+            height: 100%;
+            width: auto;
+            max-height: 120px;
+            border-radius: none;
+            object-fit: cover;
+        }
+
+        #photoInput{
+            border: none;
+        }
+
+        .button-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-danger {
+            background-color: red;
+            color: white;
+        }
+        .btn-valide {
+            background-color: green;
+            color: white;
+        }
+        .btn-valide:hover {
+            background-color: darkgreen;
+        }
+        .btn-danger:hover {
+            background-color: darkred;
+        }
+
+        .btn-primary {
+            background-color: blue;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: darkblue;
+        }
+        input:required, select:required {
+            border-left: 3px solid rgb(243,117,33);
+        }
+
+        input:invalid, select:invalid {
+            border-color: #ffcccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title-box">
+            <span class="text-left">LYCEE</span>
+            <span class="box">IKALAMAVONY</span>
+        </div>
+        <div class="user-info" onclick="openUserPanel()">
+            <img src="<?php echo htmlspecialchars($profile_image); ?>" alt="Photo de profil">
+            <span><?php echo htmlspecialchars($user_name); ?></span>
+        </div>
+    </div>
+    <div class="container">
+        <div class="menu" style="width: 20% ;">
+            <div class="menu-items">
+                <label><a href="accueil.php">Accueil</a></label>
+                <label><a href="dashboard.php">Tableau de bord</a></label>
+                <label class="active">Enregistrer un élève</label>
+                <label><a href="inscriptionEleve.php">Inscription</a></label>
+                <label><a href="absence.php">Absence</a></label>
+                <label><a href="note.php">Notes</a></label>
+                <label><a href="bulletin.php">Bulletin de notes</a></label>
+            </div>
+            <div class="logout-container">
+                <button class="logout-btn" id="logoutTrigger">Déconnexion</button>
+            </div>
+        </div>
+        
+        
+        <div class="content">
+        </div>
+    </div>
+    <script src="./JS/sweetalert2/dist/sweetalert2.all.min.js"></script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const resetButton = document.getElementById("resetForm");
+        const form = document.querySelector(".class-form");
+        const photoInput = document.getElementById("photoInput");
+        const preview = document.getElementById("preview");
+        const defaultImage = "/uploads/defaut.png";
+
+        resetButton.addEventListener("click", function () {
+            form.reset();
+            preview.src = defaultImage;
+            photoInput.value = "";
+        });
+    });
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const quitBtn = document.getElementById("quit");
+        if (quitBtn) {
+            quitBtn.addEventListener("click", function() {
+                window.location.href = "accueil.php";
+            });
+        }
+    });
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Récupérer les paramètres d'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const alertType = urlParams.get('alertType');
+        const alertMessage = urlParams.get('alertMessage');
+
+        // Afficher l'alerte si les paramètres existent
+        if (alertType && alertMessage) {
+            Swal.fire({
+                title: alertType === 'success' ? 'Succès' : 'Erreur',
+                text: decodeURIComponent(alertMessage),
+                icon: alertType,
+                confirmButtonColor: alertType === 'success' ? '#28a745' : '#dc3545',
+                confirmButtonText: 'OK',
+                allowOutsideClick: false,
+                backdrop: 'rgba(0,0,0,0.7)'
+            }).then(() => {
+                // Nettoyer l'URL après affichage
+                if (history.replaceState) {
+                    const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+                    history.replaceState(null, null, cleanUrl);
+                }
+            });
+        }
+
+        // Validation avant soumission du formulaire
+        const form = document.querySelector('.class-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                // Vérification des champs obligatoires
+                const requiredFields = form.querySelectorAll('[required]');
+                let isValid = true;
+                
+                requiredFields.forEach(field => {
+                    if (!field.value.trim()) {
+                        isValid = false;
+                        field.style.borderColor = 'red';
+                    } else {
+                        field.style.borderColor = '';
+                    }
+                });
+
+                if (!isValid) {
+                    e.preventDefault();
+                    Swal.fire({
+                        title: 'Champs obligatoires',
+                        text: 'Veuillez remplir tous les champs obligatoires',
+                        icon: 'error',
+                        confirmButtonColor: '#dc3545',
+                        confirmButtonText: 'OK',
+                        allowOutsideClick: false,
+                        backdrop: 'rgba(0,0,0,0.7)'
+                    });
+                }
+            });
+        }
+    });
+</script>
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const photoInput = document.getElementById('photoInput');
+        const preview = document.getElementById('preview');
+        const defaultImage = "/uploads/default.png";
+
+        photoInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                preview.src = defaultImage;
+            }
+        });
+
+        preview.src = defaultImage;
+    });
+</script>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const logoutBtn = document.getElementById("logoutTrigger");
+        if (logoutBtn) {
+            logoutBtn.addEventListener("click", function() {
+                Swal.fire({
+                    title: "Êtes-vous sûr ?",
+                    text: "Vous allez être déconnecté.",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#d33",
+                    cancelButtonColor: "#3085d6",
+                    confirmButtonText: "Oui, déconnectez-moi",
+                    cancelButtonText: "Annuler",
+                    allowOutsideClick: false,
+                    backdrop: 'rgba(0,0,0,0.7)',
+                    customClass: {
+                        container: 'swal2-container',
+                        popup: 'swal2-popup'
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        window.location.href = "logout.php";
+                    }
+                });
+            });
+        }
+    });
+</script>
+</body>
+</html>
