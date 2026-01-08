@@ -1,4 +1,5 @@
 <?php
+//get_factures.php
 include "config.php";
 
 $client_id = $_GET['client_id'];
@@ -46,9 +47,9 @@ $factures_result = mysqli_query($conn, $factures_query);
 
 <div class="facture-card">
     <div class="facture-header">
-        <div class="store-name">E-VAROOTRA STORE</div>
-        <div>Adresse : ..................</div>
-        <div>Téléphone : ................</div>
+        <div class="store-name">E-VAROOTRA STORE MAMAN'I NDOH</div>
+        <div>Adresse : Ampisinkinana</div>
+        <div>Téléphone : 0346046865</div>
     </div>
 
     <div style="text-align: center; font-size: 20px; font-weight: bold; margin: 20px 0;">
@@ -113,14 +114,19 @@ $factures_result = mysqli_query($conn, $factures_query);
         </div>
     </div>
 
-    <div style="margin: 20px 0;">
-        <div style="font-weight: bold;">Paiement : Dette</div>
-        <div style="color: #2ed573; font-size: 18px; margin-top: 5px;">
+    <div style="margin: 20px 0; background: <?php echo $facture['total_reste'] > 0 ? '#fff5f5' : '#f0fdf4'; ?>; padding: 15px; border-radius: 10px;">
+        <div style="font-weight: bold; font-size: 18px;">Paiement : Dette</div>
+        <div style="color: #2ed573; font-size: 20px; margin-top: 8px;">
             <strong>Payé :</strong> <?php echo number_format($facture['total_paye'], 0, ',', ' '); ?> Ar
         </div>
-        <div style="color: #ff4757; font-size: 20px; font-weight: bold; margin-top: 5px;">
+        <div style="color: <?php echo $facture['total_reste'] > 0 ? '#ff4757' : '#2ed573'; ?>; font-size: 24px; font-weight: bold; margin-top: 8px;">
             <strong>Reste :</strong> <?php echo number_format($facture['total_reste'], 0, ',', ' '); ?> Ar
         </div>
+        <?php if($facture['total_reste'] <= 0): ?>
+        <div style="color: #2ed573; font-weight: bold; margin-top: 10px; text-align: center; font-size: 20px;">
+            ✅ DETTE TOTALEMENT PAYÉE
+        </div>
+        <?php endif; ?>
     </div>
 
     <div style="border-top: 2px dashed #000; margin: 20px 0;"></div>
@@ -134,7 +140,7 @@ $factures_result = mysqli_query($conn, $factures_query);
         Merci !
     </div>
 
-    <!-- Section Paiement -->
+    <!-- Section Paiement - Visible seulement si reste à payer -->
     <?php if($facture['total_reste'] > 0): ?>
     <div class="paiement-section">
         <h3 style="margin-bottom: 15px;">💰 Enregistrer un paiement</h3>
@@ -153,16 +159,20 @@ $factures_result = mysqli_query($conn, $factures_query);
         </form>
         
         <div style="margin-top: 15px; display: flex; gap: 10px;">
-            <button onclick="setMontant('<?php echo $facture['numero_facture']; ?>', <?php echo $facture['total_reste']/3; ?>)" style="flex: 1; padding: 8px; background: #ffa502; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                1/3 (<?php echo number_format($facture['total_reste']/3, 0); ?> Ar)
+            <button onclick="setMontant('<?php echo $facture['numero_facture']; ?>', <?php echo round($facture['total_reste']/3, 2); ?>)" style="flex: 1; padding: 8px; background: #ffa502; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                1/3 (<?php echo number_format(round($facture['total_reste']/3), 0, ',', ' '); ?> Ar)
             </button>
-            <button onclick="setMontant('<?php echo $facture['numero_facture']; ?>', <?php echo $facture['total_reste']/2; ?>)" style="flex: 1; padding: 8px; background: #ff6348; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                1/2 (<?php echo number_format($facture['total_reste']/2, 0); ?> Ar)
+            <button onclick="setMontant('<?php echo $facture['numero_facture']; ?>', <?php echo round($facture['total_reste']/2, 2); ?>)" style="flex: 1; padding: 8px; background: #ff6348; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                1/2 (<?php echo number_format(round($facture['total_reste']/2), 0, ',', ' '); ?> Ar)
             </button>
             <button onclick="setMontant('<?php echo $facture['numero_facture']; ?>', <?php echo $facture['total_reste']; ?>)" style="flex: 1; padding: 8px; background: #2ed573; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Total (<?php echo number_format($facture['total_reste'], 0); ?> Ar)
+                Total (<?php echo number_format($facture['total_reste'], 0, ',', ' '); ?> Ar)
             </button>
         </div>
+    </div>
+    <?php else: ?>
+    <div style="background: #d4edda; color: #155724; padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 18px; margin-top: 20px;">
+        ✅ Cette facture a été totalement payée
     </div>
     <?php endif; ?>
 

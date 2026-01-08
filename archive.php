@@ -272,6 +272,7 @@ $nom_utilisateur = htmlspecialchars($_SESSION['nom']);
             <div class="menu">
                 <a href="index.php" class="menu-item">Accueil</a>
                 <a href="dashboard.php" class="menu-item">Tableau de bord</a>
+                <a href="client.php" class="menu-item">Client</a>
                 <a href="produits.php" class="menu-item">Produits</a>
                 <a href="dette.php" class="menu-item">Dette</a>
                 <a href="archive.php" class="menu-item active">Archive de dettes payées</a>

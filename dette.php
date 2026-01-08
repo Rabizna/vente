@@ -1,4 +1,5 @@
 <?php
+//dette.php
 include "config.php";
 
 if(!isset($_SESSION['user'])){
@@ -15,7 +16,15 @@ $message_type = "";
 // AJOUTER COLONNE numero_facture SI N'EXISTE PAS
 $check_column = mysqli_query($conn, "SHOW COLUMNS FROM dettes LIKE 'numero_facture'");
 if(mysqli_num_rows($check_column) == 0){
-    mysqli_query($conn, "ALTER TABLE dettes ADD COLUMN numero_facture VARCHAR(50) UNIQUE AFTER id");
+    mysqli_query($conn, "ALTER TABLE dettes ADD COLUMN numero_facture VARCHAR(50) AFTER id");
+    mysqli_query($conn, "ALTER TABLE dettes ADD INDEX idx_numero_facture (numero_facture)");
+} else {
+    // Vérifier si l'index unique existe et le supprimer
+    $check_unique = mysqli_query($conn, "SHOW INDEXES FROM dettes WHERE Key_name = 'numero_facture' AND Non_unique = 0");
+    if(mysqli_num_rows($check_unique) > 0){
+        mysqli_query($conn, "ALTER TABLE dettes DROP INDEX numero_facture");
+        mysqli_query($conn, "ALTER TABLE dettes ADD INDEX idx_numero_facture (numero_facture)");
+    }
 }
 
 // ENREGISTRER UNE DETTE
@@ -23,9 +32,9 @@ if(isset($_POST['action']) && $_POST['action'] == 'enregistrer_dette'){
     $client_id = mysqli_real_escape_string($conn, $_POST['client_id']);
     $date_dette = mysqli_real_escape_string($conn, $_POST['date_dette']);
     
-    // Générer numéro de facture unique
+    // Générer UN SEUL numéro de facture pour tous les produits
     $annee = date('Y');
-    $last_facture = mysqli_query($conn, "SELECT numero_facture FROM dettes WHERE numero_facture LIKE 'FAC-$annee-%' ORDER BY id DESC LIMIT 1");
+    $last_facture = mysqli_query($conn, "SELECT numero_facture FROM dettes WHERE numero_facture LIKE 'FAC-$annee-%' ORDER BY CAST(SUBSTRING_INDEX(numero_facture, '-', -1) AS UNSIGNED) DESC LIMIT 1");
     
     if(mysqli_num_rows($last_facture) > 0){
         $last = mysqli_fetch_assoc($last_facture);
@@ -40,7 +49,9 @@ if(isset($_POST['action']) && $_POST['action'] == 'enregistrer_dette'){
     $prix = $_POST['prix'];
     
     $success = true;
+    $nb_produits = 0;
     
+    // IMPORTANT: Utiliser le MÊME numéro de facture pour TOUS les produits
     for($i = 0; $i < count($produits); $i++){
         if(!empty($produits[$i]) && !empty($quantites[$i])){
             $produit_id = mysqli_real_escape_string($conn, $produits[$i]);
@@ -50,18 +61,22 @@ if(isset($_POST['action']) && $_POST['action'] == 'enregistrer_dette'){
             $sql = "INSERT INTO dettes (numero_facture, client_id, produit_id, quantite, prix_unitaire_fige, montant_paye, enregistre_par, date_dette) 
                     VALUES ('$numero_facture', '$client_id', '$produit_id', '$quantite', '$prix_unitaire', 0, '$user_id', '$date_dette')";
             
-            if(!mysqli_query($conn, $sql)){
+            if(mysqli_query($conn, $sql)){
+                $nb_produits++;
+            } else {
                 $success = false;
+                $message = "Erreur produit " . ($i+1) . ": " . mysqli_error($conn);
+                $message_type = "error";
                 break;
             }
         }
     }
     
-    if($success){
-        $message = "Dette enregistrée avec succès ! Numéro: $numero_facture";
+    if($success && $nb_produits > 0){
+        $message = "Dette enregistrée avec succès ! N°: $numero_facture ($nb_produits produit(s))";
         $message_type = "success";
-    } else {
-        $message = "Erreur : " . mysqli_error($conn);
+    } elseif($nb_produits == 0) {
+        $message = "Aucun produit valide ajouté !";
         $message_type = "error";
     }
 }
@@ -71,20 +86,55 @@ if(isset($_POST['action']) && $_POST['action'] == 'payer_dette'){
     $numero_facture = mysqli_real_escape_string($conn, $_POST['numero_facture']);
     $montant_paiement = mysqli_real_escape_string($conn, $_POST['montant_paiement']);
     
-    // Mettre à jour toutes les dettes avec ce numéro de facture
-    $update_sql = "UPDATE dettes SET montant_paye = montant_paye + $montant_paiement WHERE numero_facture = '$numero_facture'";
+    // Récupérer les infos de la dette et du client
+    $info_query = mysqli_query($conn, "SELECT d.id, d.client_id, c.nom_complet 
+                                        FROM dettes d 
+                                        JOIN clients c ON d.client_id = c.id 
+                                        WHERE d.numero_facture = '$numero_facture' 
+                                        LIMIT 1");
+    $info = mysqli_fetch_assoc($info_query);
+    
+    // Générer la référence unique: Prénom + Date
+    $prenom = explode(' ', $info['nom_complet'])[0]; // Prendre le premier mot du nom
+    $date_ref = date('Ymd'); // Format: 20260108
+    // Nettoyer le prénom des caractères spéciaux
+    $prenom_clean = str_replace("'", "", $prenom); // Enlever les apostrophes
+    $reference_paiement = strtoupper($prenom_clean) . '-' . $date_ref;
+    
+    // Vérifier si une référence identique existe déjà aujourd'hui
+    // Vérifier si une référence identique existe déjà aujourd'hui
+    $reference_escaped = mysqli_real_escape_string($conn, $reference_paiement);
+    $count_ref = mysqli_query($conn, "SELECT COUNT(*) as nb FROM paiements_dette 
+                                    WHERE reference_paiement LIKE '$reference_escaped%' 
+                                    AND DATE(date_paiement) = CURDATE()");
+    $count = mysqli_fetch_assoc($count_ref)['nb'];
+    
+    // Ajouter un compteur si nécessaire
+    if($count > 0){
+        $reference_paiement .= '-' . ($count + 1);
+    }
+    
+    // Mettre à jour toutes les lignes de dettes avec ce numéro de facture
+    $update_sql = "UPDATE dettes 
+                   SET montant_paye = montant_paye + $montant_paiement 
+                   WHERE numero_facture = '$numero_facture'";
     
     if(mysqli_query($conn, $update_sql)){
         // Enregistrer dans l'historique des paiements
-        $dette_id_query = mysqli_query($conn, "SELECT id FROM dettes WHERE numero_facture = '$numero_facture' LIMIT 1");
-        $dette_row = mysqli_fetch_assoc($dette_id_query);
+        $insert_paiement = "INSERT INTO paiements_dette 
+                           (dette_id, montant_paye, mode_paiement, reference_paiement, enregistre_par, date_paiement) 
+                           VALUES ('{$info['id']}', '$montant_paiement', 'especes', '$reference_paiement', '$user_id', CURDATE())";
         
-        $insert_paiement = "INSERT INTO paiements_dette (dette_id, montant_paye, enregistre_par, date_paiement) 
-                           VALUES ('{$dette_row['id']}', '$montant_paiement', '$user_id', CURDATE())";
-        mysqli_query($conn, $insert_paiement);
-        
-        $message = "Paiement de " . number_format($montant_paiement, 0) . " Ar enregistré !";
-        $message_type = "success";
+        if(mysqli_query($conn, $insert_paiement)){
+            $message = "✅ Paiement de " . number_format($montant_paiement, 0, ',', ' ') . " Ar enregistré ! Réf: $reference_paiement";
+            $message_type = "success";
+        } else {
+            $message = "⚠️ Dette mise à jour mais erreur historique: " . mysqli_error($conn);
+            $message_type = "error";
+        }
+    } else {
+        $message = "❌ Erreur lors du paiement: " . mysqli_error($conn);
+        $message_type = "error";
     }
 }
 
