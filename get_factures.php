@@ -13,7 +13,8 @@ $client = mysqli_fetch_assoc($client_result);
 $factures_query = "SELECT 
                     d.numero_facture,
                     d.date_dette,
-                    u.nom_complet as vendeur,
+                    u.nom_complet as vendeur_nom,
+                    u.pseudo as vendeur_pseudo,
                     SUM(d.montant_total) as total_facture,
                     SUM(d.montant_paye) as total_paye,
                     SUM(d.montant_restant) as total_reste,
@@ -22,24 +23,26 @@ $factures_query = "SELECT
                    JOIN utilisateurs u ON d.enregistre_par = u.id
                    WHERE d.client_id = '$client_id' 
                    AND d.statut IN ('active', 'partiellement_payee')
-                   GROUP BY d.numero_facture, d.date_dette, u.nom_complet
+                   GROUP BY d.numero_facture, d.date_dette, u.nom_complet, u.pseudo
                    HAVING total_reste > 0
                    ORDER BY d.date_dette DESC";
 $factures_result = mysqli_query($conn, $factures_query);
 
-// Récupérer l'historique des paiements pour toutes les factures
+// Récupérer l'historique des paiements pour toutes les factures avec infos utilisateur ET date_creation
 $paiements_query = "SELECT 
                         p.dette_id,
                         d.numero_facture,
                         p.montant_paye,
                         p.reference_paiement,
                         p.date_paiement,
-                        u.nom_complet as enregistre_par
+                        p.date_creation,
+                        u.nom_complet as enregistre_par_nom,
+                        u.pseudo as enregistre_par_pseudo
                     FROM paiements_dette p
                     JOIN dettes d ON p.dette_id = d.id
                     JOIN utilisateurs u ON p.enregistre_par = u.id
                     WHERE d.client_id = '$client_id'
-                    ORDER BY p.date_paiement DESC";
+                    ORDER BY p.date_creation DESC, p.id DESC";
 $paiements_result = mysqli_query($conn, $paiements_query);
 
 // Organiser les paiements par numéro de facture
@@ -477,7 +480,7 @@ while($facture = mysqli_fetch_assoc($factures_result)):
     <div class="facture-info">
         <div class="facture-info-left">
             <div><strong>Date :</strong> <?php echo date('d/m/Y', strtotime($facture['date_dette'])); ?></div>
-            <div><strong>Vendu par :</strong> <?php echo htmlspecialchars($facture['vendeur']); ?></div>
+            <div><strong>Vendu par :</strong> <?php echo htmlspecialchars($facture['vendeur_pseudo'] ?? 'Non spécifié'); ?></div>
         </div>
         <div class="facture-info-right">
             <div><strong>CLIENT</strong></div>
@@ -568,8 +571,12 @@ while($facture = mysqli_fetch_assoc($factures_result)):
             <div class="paiement-item-left">
                 <div class="paiement-ref">Réf: <?php echo htmlspecialchars($paiement['reference_paiement']); ?></div>
                 <div class="paiement-date">
-                    <?php echo date('d/m/Y', strtotime($paiement['date_paiement'])); ?> 
-                    - par <?php echo htmlspecialchars($paiement['enregistre_par']); ?>
+                    <?php 
+                    // Vérifier si date_creation existe et l'utiliser pour l'heure
+                    $datetime = $paiement['date_creation'] ?? $paiement['date_paiement'];
+                    echo date('d/m/Y à H:i', strtotime($datetime)); 
+                    ?> 
+                    - Enregistré par <?php echo htmlspecialchars($paiement['enregistre_par_pseudo'] ?? 'Inconnu'); ?>
                 </div>
             </div>
             <div class="paiement-montant">

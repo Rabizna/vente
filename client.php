@@ -1,4 +1,5 @@
 <?php
+//client.php - VERSION CORRIGÉE
 include "config.php";
 
 if(!isset($_SESSION['user'])){
@@ -22,10 +23,10 @@ if(isset($_POST['action']) && $_POST['action'] == 'ajouter'){
             VALUES ('$nom_complet', '$telephone', '$adresse')";
     
     if(mysqli_query($conn, $sql)){
-        $message = "Client ajouté avec succès !";
+        $message = "✅ Client ajouté avec succès !";
         $message_type = "success";
     } else {
-        $message = "Erreur : " . mysqli_error($conn);
+        $message = "❌ Erreur : " . mysqli_error($conn);
         $message_type = "error";
     }
 }
@@ -44,22 +45,34 @@ if(isset($_POST['action']) && $_POST['action'] == 'modifier'){
             WHERE id='$id'";
     
     if(mysqli_query($conn, $sql)){
-        $message = "Client modifié avec succès !";
+        $message = "✅ Client modifié avec succès !";
         $message_type = "success";
     } else {
-        $message = "Erreur : " . mysqli_error($conn);
+        $message = "❌ Erreur : " . mysqli_error($conn);
         $message_type = "error";
     }
 }
 
-// SUPPRIMER UN CLIENT (désactiver)
+// SUPPRIMER UN CLIENT (désactiver) - AVEC VÉRIFICATION
 if(isset($_GET['supprimer'])){
     $id = mysqli_real_escape_string($conn, $_GET['supprimer']);
-    $sql = "UPDATE clients SET actif=0 WHERE id='$id'";
     
-    if(mysqli_query($conn, $sql)){
-        $message = "Client supprimé avec succès !";
-        $message_type = "success";
+    // Vérifier si le client a des dettes actives
+    $check_dettes = mysqli_query($conn, "SELECT COUNT(*) as nb FROM dettes 
+                                         WHERE client_id = '$id' 
+                                         AND statut IN ('active', 'partiellement_payee')");
+    $dette_count = mysqli_fetch_assoc($check_dettes)['nb'];
+    
+    if($dette_count > 0){
+        $message = "❌ Impossible de supprimer ce client ! Il a encore $dette_count facture(s) active(s).";
+        $message_type = "error";
+    } else {
+        $sql = "UPDATE clients SET actif=0 WHERE id='$id'";
+        
+        if(mysqli_query($conn, $sql)){
+            $message = "✅ Client supprimé avec succès !";
+            $message_type = "success";
+        }
     }
 }
 
@@ -454,6 +467,19 @@ $clients_result = mysqli_query($conn, $clients_query);
             transform: scale(1.05);
         }
 
+        /* ✅ NOUVEAU: Style pour bouton désactivé */
+        .btn-delete:disabled {
+            background: #cccccc;
+            color: #999;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .btn-delete:disabled:hover {
+            background: #cccccc;
+            transform: none;
+        }
+
         .badge-dette {
             display: inline-block;
             padding: 4px 10px;
@@ -612,6 +638,34 @@ $clients_result = mysqli_query($conn, $clients_query);
             color: #999;
             font-size: 16px;
         }
+
+        /* Tooltip pour bouton désactivé */
+        .tooltip {
+            position: relative;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 220px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -110px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 12px;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -634,7 +688,7 @@ $clients_result = mysqli_query($conn, $clients_query);
                 <a href="client.php" class="menu-item active">Client</a>
                 <a href="produits.php" class="menu-item">Produits</a>
                 <a href="dette.php" class="menu-item">Dette</a>
-                <a href="archive.php" class="menu-item">Archive de dettes payées</a>
+                <a href="archive.php" class="menu-item">Archive</a>
             </div>
             <a href="logout.php" class="logout-btn">Déconnexion</a>
         </div>
@@ -662,8 +716,13 @@ $clients_result = mysqli_query($conn, $clients_query);
 
             <?php if(mysqli_num_rows($clients_result) > 0): ?>
             <div class="clients-grid" id="clientsGrid">
-                <?php while($client = mysqli_fetch_assoc($clients_result)): ?>
-                <div class="client-card" data-name="<?php echo strtolower($client['nom_complet']); ?>" data-phone="<?php echo strtolower($client['telephone']); ?>" data-address="<?php echo strtolower($client['adresse']); ?>">
+                <?php while($client = mysqli_fetch_assoc($clients_result)): 
+                    $has_dettes = $client['dettes_actives'] > 0;
+                ?>
+                <div class="client-card" 
+                     data-name="<?php echo strtolower($client['nom_complet']); ?>" 
+                     data-phone="<?php echo strtolower($client['telephone']); ?>" 
+                     data-address="<?php echo strtolower($client['adresse']); ?>">
                     <div class="client-header">
                         <div class="client-avatar">
                             <?php echo strtoupper(substr($client['nom_complet'], 0, 1)); ?>
@@ -707,12 +766,25 @@ $clients_result = mysqli_query($conn, $clients_query);
                     </div>
 
                     <div class="client-actions">
-                        <button class="btn-action btn-edit" onclick='editClient(<?php echo json_encode($client); ?>)'>
+                        <button class="btn-action btn-edit" 
+                                onclick='editClient(<?php echo htmlspecialchars(json_encode($client), ENT_QUOTES, 'UTF-8'); ?>)'>
                             <i class="fas fa-edit"></i> Modifier
                         </button>
-                        <button class="btn-action btn-delete" onclick="deleteClient(<?php echo $client['id']; ?>)">
+                        
+                        <?php if($has_dettes): ?>
+                        <div class="tooltip">
+                            <button class="btn-action btn-delete" disabled>
+                                <i class="fas fa-lock"></i> Supprimer
+                            </button>
+                            <span class="tooltiptext">
+                                ⚠️ Ce client a <?php echo $client['dettes_actives']; ?> facture(s) active(s). Impossible de le supprimer.
+                            </span>
+                        </div>
+                        <?php else: ?>
+                        <button class="btn-action btn-delete" onclick="deleteClient(<?php echo $client['id']; ?>, '<?php echo htmlspecialchars(addslashes($client['nom_complet'])); ?>')">
                             <i class="fas fa-trash"></i> Supprimer
                         </button>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endwhile; ?>
@@ -782,19 +854,23 @@ $clients_result = mysqli_query($conn, $clients_query);
             document.getElementById('clientModal').classList.remove('active');
         }
 
+        // ✅ CORRECTION: Fonction editClient améliorée
         function editClient(client) {
+            console.log('Editing client:', client); // Debug
+            
             document.getElementById('modalTitle').innerHTML = '<i class="fas fa-user-edit"></i> Modifier le client';
             document.getElementById('formAction').value = 'modifier';
             document.getElementById('clientId').value = client.id;
-            document.getElementById('nom_complet').value = client.nom_complet;
+            document.getElementById('nom_complet').value = client.nom_complet || '';
             document.getElementById('telephone').value = client.telephone || '';
             document.getElementById('adresse').value = client.adresse || '';
             
             document.getElementById('clientModal').classList.add('active');
         }
 
-        function deleteClient(id) {
-            if(confirm('⚠️ Êtes-vous sûr de vouloir supprimer ce client ?\n\nCette action est irréversible.')) {
+        // ✅ CORRECTION: Fonction deleteClient avec nom du client
+        function deleteClient(id, nomClient) {
+            if(confirm('⚠️ Êtes-vous sûr de vouloir supprimer "' + nomClient + '" ?\n\nCette action est irréversible.')) {
                 window.location.href = 'client.php?supprimer=' + id;
             }
         }

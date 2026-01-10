@@ -1,4 +1,5 @@
 <?php
+//login.php - VERSION CORRIGÉE
 include "config.php";
 $message = "";
 $message_type = ""; // Pour différencier succès et erreur
@@ -20,6 +21,7 @@ if (isset($_POST['action']) && $_POST['action'] == "login") {
         $row = mysqli_fetch_assoc($result);
         $_SESSION['user'] = $row['pseudo'];
         $_SESSION['nom']  = $row['nom_complet'];
+        $_SESSION['user_id'] = $row['id'];  // ✅ CORRECTION CRITIQUE AJOUTÉE !
         header("Location: index.php");
         exit();
     } else {

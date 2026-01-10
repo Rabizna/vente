@@ -8,7 +8,18 @@ if(!isset($_SESSION['user'])){
 }
 
 $nom_utilisateur = htmlspecialchars($_SESSION['nom']);
-$user_id = $_SESSION['user_id'] ?? 1; // Utiliser l'ID de session
+// CORRECTION: Récupérer le VRAI ID de l'utilisateur connecté
+$user_id = $_SESSION['user_id'] ?? 1;
+
+// Si user_id n'existe pas dans la session, le chercher
+if(!isset($_SESSION['user_id']) && isset($_SESSION['user'])){
+    $pseudo_session = mysqli_real_escape_string($conn, $_SESSION['user']);
+    $user_query = mysqli_query($conn, "SELECT id FROM utilisateurs WHERE pseudo = '$pseudo_session'");
+    if($user_row = mysqli_fetch_assoc($user_query)){
+        $_SESSION['user_id'] = $user_row['id'];
+        $user_id = $user_row['id'];
+    }
+}
 
 $message = "";
 $message_type = "";
@@ -298,12 +309,11 @@ $produits_result = mysqli_query($conn, $produits_query);
         }
 
         .sidebar {
-            width: 320px;
+            width: 280px;
             background: linear-gradient(180deg, #0a4d4d 0%, #063838 100%);
             padding: 30px 0;
             display: flex;
             flex-direction: column;
-            box-shadow: 4px 0 15px rgba(0,0,0,0.1);
         }
 
         .menu {
@@ -313,17 +323,14 @@ $produits_result = mysqli_query($conn, $produits_query);
 
         .menu-item {
             display: block;
-            padding: 18px 25px;
-            margin: 8px 0;
+            padding: 15px 20px;
+            margin: 5px 0;
             color: white;
             text-decoration: none;
-            border-radius: 12px;
-            font-size: 16px;
+            border-radius: 10px;
+            font-size: 15px;
             font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 1px;
             transition: all 0.3s ease;
-            cursor: pointer;
         }
 
         .menu-item:hover {
@@ -334,7 +341,7 @@ $produits_result = mysqli_query($conn, $produits_query);
         .menu-item.active {
             background: #ff8c42;
             box-shadow: 0 4px 15px rgba(255, 140, 66, 0.3);
-        }        
+        }
 
         .logout-btn {
             margin: 20px 15px;
