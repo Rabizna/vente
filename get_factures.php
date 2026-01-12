@@ -1,5 +1,5 @@
 <?php
-//get_factures.php - VERSION OPTIMALE
+//get_factures.php - VERSION CORRIGÉE (Prix figés)
 include "config.php";
 
 $client_id = mysqli_real_escape_string($conn, $_GET['client_id']);
@@ -9,7 +9,7 @@ $client_query = "SELECT nom_complet, telephone, adresse FROM clients WHERE id = 
 $client_result = mysqli_query($conn, $client_query);
 $client = mysqli_fetch_assoc($client_result);
 
-// Récupérer UNIQUEMENT les factures NON payées (les payées vont en archive)
+// CORRECTION: Utiliser les montants FIGÉS de la table dettes (pas recalculer)
 $factures_query = "SELECT 
                     d.numero_facture,
                     d.date_dette,
@@ -28,7 +28,7 @@ $factures_query = "SELECT
                    ORDER BY d.date_dette DESC";
 $factures_result = mysqli_query($conn, $factures_query);
 
-// Récupérer l'historique des paiements pour toutes les factures avec infos utilisateur ET date_creation
+// Récupérer l'historique des paiements
 $paiements_query = "SELECT 
                         p.dette_id,
                         d.numero_facture,
@@ -45,7 +45,6 @@ $paiements_query = "SELECT
                     ORDER BY p.date_creation DESC, p.id DESC";
 $paiements_result = mysqli_query($conn, $paiements_query);
 
-// Organiser les paiements par numéro de facture
 $paiements_par_facture = [];
 while($paiement = mysqli_fetch_assoc($paiements_result)){
     $paiements_par_facture[$paiement['numero_facture']][] = $paiement;
@@ -120,36 +119,23 @@ while($paiement = mysqli_fetch_assoc($paiements_result)){
         text-align: right;
     }
 
-    .facture-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 20px 0;
-    }
+.facture-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;     /* ← très important ! */
+}
 
-    .facture-table th,
-    .facture-table td {
-        padding: 10px;
-        text-align: left;
-        border-bottom: 1px dashed #ccc;
-    }
+.facture-table th,
+.facture-table td {
+    padding: 10px 8px;
+    border-bottom: 1px dashed #ccc;
+}
 
-    .facture-table th {
-        background: #f8f9fa;
-        font-weight: bold;
-    }
-
-    .facture-table td {
-        font-size: 14px;
-    }
-
-    .facture-table td.text-center {
-        text-align: center;
-    }
-
-    .facture-table td.text-right {
-        text-align: right;
-    }
-
+.facture-table th:nth-child(1), td:nth-child(1) { width: 5%;    text-align: center; }
+.facture-table th:nth-child(2), td:nth-child(2) { width: 45%;   text-align: left;   }   /* Produit ← prend le plus de place */
+.facture-table th:nth-child(3), td:nth-child(3) { width: 12%;   text-align: center; }
+.facture-table th:nth-child(4), td:nth-child(4) { width: 18%;   text-align: right;  }
+.facture-table th:nth-child(5), td:nth-child(5) { width: 20%;   text-align: right;  }
     .facture-totals {
         margin-top: 20px;
         border-top: 2px solid #000;
@@ -445,23 +431,23 @@ $facture_count = 0;
 while($facture = mysqli_fetch_assoc($factures_result)): 
     $facture_count++;
     
-    // Récupérer les produits de cette facture
+    // CORRECTION CRITIQUE: Utiliser les MONTANTS FIGÉS de la table dettes
+    // Ne PAS recalculer avec les prix actuels !
     $numero_facture_escaped = mysqli_real_escape_string($conn, $facture['numero_facture']);
     $produits_query = "SELECT 
                         p.nom as produit_nom,
-                        p.quantite_unite,
                         u.symbole,
                         d.quantite,
                         d.prix_unitaire_fige,
-                        (d.quantite * d.prix_unitaire_fige) as total_ligne
+                        d.montant_total as total_ligne
                        FROM dettes d
-                       JOIN produits p ON d.produit_id = p.id
-                       JOIN unites u ON p.unite_id = u.id
+                       JOIN produits_unites pu ON d.produit_unite_id = pu.id
+                       JOIN produits p ON pu.produit_id = p.id
+                       JOIN unites u ON pu.unite_id = u.id
                        WHERE d.numero_facture = '$numero_facture_escaped'
                        ORDER BY d.id";
     $produits_result = mysqli_query($conn, $produits_query);
     
-    // Déterminer le statut de la facture
     $is_paid = $facture['total_reste'] <= 0;
     $is_partial = $facture['total_paye'] > 0 && $facture['total_reste'] > 0;
 ?>
@@ -509,8 +495,10 @@ while($facture = mysqli_fetch_assoc($factures_result)):
             ?>
             <tr>
                 <td><?php echo $index++; ?></td>
-                <td><?php echo htmlspecialchars($produit['produit_nom']) . ' ' . $produit['quantite_unite'] . $produit['symbole']; ?></td>
-                <td class="text-center"><?php echo $produit['quantite']; ?></td>
+                <td><?php echo htmlspecialchars($produit['produit_nom']); ?></td>
+                <td class="text-center">
+                    <?php echo number_format($produit['quantite'], 2, ',', ' ') . ' ' . htmlspecialchars($produit['symbole']); ?>
+                </td>
                 <td class="text-right"><?php echo number_format($produit['prix_unitaire_fige'], 0, ',', ' '); ?></td>
                 <td class="text-right"><?php echo number_format($produit['total_ligne'], 0, ',', ' '); ?></td>
             </tr>
@@ -536,7 +524,6 @@ while($facture = mysqli_fetch_assoc($factures_result)):
     </div>
 
     <?php 
-    // Déterminer la classe du statut
     $status_class = 'unpaid';
     if($is_paid) $status_class = 'paid';
     elseif($is_partial) $status_class = 'partial';
@@ -572,7 +559,6 @@ while($facture = mysqli_fetch_assoc($factures_result)):
                 <div class="paiement-ref">Réf: <?php echo htmlspecialchars($paiement['reference_paiement']); ?></div>
                 <div class="paiement-date">
                     <?php 
-                    // Vérifier si date_creation existe et l'utiliser pour l'heure
                     $datetime = $paiement['date_creation'] ?? $paiement['date_paiement'];
                     echo date('d/m/Y à H:i', strtotime($datetime)); 
                     ?> 
@@ -598,7 +584,6 @@ while($facture = mysqli_fetch_assoc($factures_result)):
         Merci de votre confiance !
     </div>
 
-    <!-- Section Paiement -->
     <?php if(!$is_paid): ?>
     <div class="paiement-section">
         <h3>
@@ -670,7 +655,6 @@ while($facture = mysqli_fetch_assoc($factures_result)):
 <?php endif; ?>
 
 <script>
-// Définir le montant dans le formulaire
 function setMontant(numeroFacture, montant) {
     const input = document.querySelector(`input[data-facture="${numeroFacture}"]`);
     if(input) {
@@ -679,7 +663,6 @@ function setMontant(numeroFacture, montant) {
     }
 }
 
-// Confirmer le paiement
 function confirmPaiement(form) {
     const montant = parseFloat(form.querySelector('input[name="montant_paiement"]').value);
     const montantFormat = montant.toLocaleString('fr-FR');

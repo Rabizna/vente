@@ -1,5 +1,5 @@
 <?php
-//dette.php - VERSION OPTIMALE
+//dette.php - VERSION CORRIGÉE
 include "config.php";
 
 if(!isset($_SESSION['user'])){
@@ -8,7 +8,6 @@ if(!isset($_SESSION['user'])){
 }
 
 $nom_utilisateur = htmlspecialchars($_SESSION['nom']);
-// CORRECTION: Récupérer le VRAI ID de l'utilisateur connecté
 $user_id = $_SESSION['user_id'] ?? 1;
 
 // Si user_id n'existe pas dans la session, le chercher
@@ -55,32 +54,40 @@ if(isset($_POST['action']) && $_POST['action'] == 'enregistrer_dette'){
     $numero_facture = "FAC-$annee-" . str_pad($num, 3, '0', STR_PAD_LEFT);
     
     // Insérer les produits
-    $produits = $_POST['produits'];
+    $produits_unites = $_POST['produits_unites'];
     $quantites = $_POST['quantites'];
-    $prix = $_POST['prix'];
     
     mysqli_begin_transaction($conn);
     
     try {
         $nb_produits = 0;
         
-        for($i = 0; $i < count($produits); $i++){
-            if(!empty($produits[$i]) && !empty($quantites[$i]) && $quantites[$i] > 0){
-                $produit_id = mysqli_real_escape_string($conn, $produits[$i]);
+        for($i = 0; $i < count($produits_unites); $i++){
+            if(!empty($produits_unites[$i]) && !empty($quantites[$i]) && $quantites[$i] > 0){
+                $produit_unite_id = mysqli_real_escape_string($conn, $produits_unites[$i]);
                 $quantite = mysqli_real_escape_string($conn, $quantites[$i]);
-                $prix_unitaire = mysqli_real_escape_string($conn, $prix[$i]);
                 
-                $sql = "INSERT INTO dettes 
-                        (numero_facture, client_id, produit_id, quantite, prix_unitaire_fige, 
-                         montant_paye, enregistre_par, date_dette) 
-                        VALUES 
-                        ('$numero_facture', '$client_id', '$produit_id', '$quantite', 
-                         '$prix_unitaire', 0, '$user_id', '$date_dette')";
-                
-                if(!mysqli_query($conn, $sql)){
-                    throw new Exception("Erreur ligne " . ($i+1) . ": " . mysqli_error($conn));
+                // Récupérer le prix de cette unité
+                $prix_query = "SELECT prix_unitaire FROM produits_unites WHERE id = '$produit_unite_id'";
+                $prix_result = mysqli_query($conn, $prix_query);
+                if(mysqli_num_rows($prix_result) > 0){
+                    $prix_row = mysqli_fetch_assoc($prix_result);
+                    $prix_unitaire = $prix_row['prix_unitaire'];
+                    
+                    $sql = "INSERT INTO dettes 
+                            (numero_facture, client_id, produit_unite_id, quantite, prix_unitaire_fige, 
+                             montant_paye, enregistre_par, date_dette) 
+                            VALUES 
+                            ('$numero_facture', '$client_id', '$produit_unite_id', '$quantite', 
+                             '$prix_unitaire', 0, '$user_id', '$date_dette')";
+                    
+                    if(!mysqli_query($conn, $sql)){
+                        throw new Exception("Erreur ligne " . ($i+1) . ": " . mysqli_error($conn));
+                    }
+                    $nb_produits++;
+                } else {
+                    throw new Exception("Prix introuvable pour le produit sélectionné !");
                 }
-                $nb_produits++;
             }
         }
         
@@ -100,7 +107,7 @@ if(isset($_POST['action']) && $_POST['action'] == 'enregistrer_dette'){
 }
 
 // ============================================
-// ENREGISTRER UN PAIEMENT (VERSION AMÉLIORÉE)
+// ENREGISTRER UN PAIEMENT
 // ============================================
 if(isset($_POST['action']) && $_POST['action'] == 'payer_dette'){
     $numero_facture = mysqli_real_escape_string($conn, $_POST['numero_facture']);
@@ -142,11 +149,10 @@ if(isset($_POST['action']) && $_POST['action'] == 'payer_dette'){
             
             // 3. Générer la référence de paiement
             $prenom = explode(' ', $info['nom_complet'])[0];
-            $prenom_clean = preg_replace("/[^A-Za-z0-9]/", '', $prenom); // Enlever tous les caractères spéciaux
+            $prenom_clean = preg_replace("/[^A-Za-z0-9]/", '', $prenom);
             $date_ref = date('Ymd');
             $reference_base = strtoupper($prenom_clean) . '-' . $date_ref;
             
-            // Vérifier si la référence existe déjà
             $ref_escaped = mysqli_real_escape_string($conn, $reference_base);
             $count_query = "SELECT COUNT(*) as nb FROM paiements_dette 
                            WHERE reference_paiement LIKE '$ref_escaped%' 
@@ -173,10 +179,8 @@ if(isset($_POST['action']) && $_POST['action'] == 'payer_dette'){
             while($ligne = mysqli_fetch_assoc($lignes_result)){
                 if($reste_a_distribuer <= 0) break;
                 
-                // Calculer la part proportionnelle
                 $part = min($ligne['montant_restant'], $reste_a_distribuer);
                 
-                // Mettre à jour cette ligne
                 $update_sql = "UPDATE dettes 
                               SET montant_paye = montant_paye + $part
                               WHERE id = {$ligne['id']}";
@@ -240,13 +244,20 @@ $clients_dettes_result = mysqli_query($conn, $clients_dettes_query);
 $clients_query = "SELECT * FROM clients WHERE actif = 1 ORDER BY nom_complet";
 $clients_result = mysqli_query($conn, $clients_query);
 
-// Tous les produits actifs
-$produits_query = "SELECT p.*, u.symbole as unite_symbole 
-                   FROM produits p 
-                   JOIN unites u ON p.unite_id = u.id 
-                   WHERE p.actif = 1 
-                   ORDER BY p.nom";
-$produits_result = mysqli_query($conn, $produits_query);
+// CORRECTION: Récupérer les produits avec leurs unités disponibles
+$produits_unites_query = "SELECT 
+                            pu.id as produit_unite_id,
+                            p.nom as produit_nom,
+                            u.nom as unite_nom,
+                            u.symbole as unite_symbole,
+                            pu.prix_unitaire,
+                            CONCAT(p.nom, ' (', u.symbole, ') - ', FORMAT(pu.prix_unitaire, 0), ' Ar') as designation_complete
+                          FROM produits_unites pu
+                          JOIN produits p ON pu.produit_id = p.id
+                          JOIN unites u ON pu.unite_id = u.id
+                          WHERE p.actif = 1 AND pu.actif = 1
+                          ORDER BY p.nom, u.nom";
+$produits_unites_result = mysqli_query($conn, $produits_unites_query);
 ?>
 <!DOCTYPE html>
 <html lang="fr">
@@ -255,7 +266,7 @@ $produits_result = mysqli_query($conn, $produits_query);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>E-varootra - Gestion des Dettes</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
+        <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
@@ -939,15 +950,15 @@ $produits_result = mysqli_query($conn, $produits_query);
                     <div id="produitsList">
                         <div class="produit-row">
                             <div class="form-group">
-                                <label>Produit *</label>
-                                <select name="produits[]" class="produit-select" required onchange="updatePrice(this)">
+                                <label>Produit et Unité *</label>
+                                <select name="produits_unites[]" class="produit-select" required onchange="updatePrice(this)">
                                     <option value="">-- Choisir --</option>
                                     <?php 
-                                    mysqli_data_seek($produits_result, 0);
-                                    while($produit = mysqli_fetch_assoc($produits_result)): 
+                                    mysqli_data_seek($produits_unites_result, 0);
+                                    while($pu = mysqli_fetch_assoc($produits_unites_result)): 
                                     ?>
-                                    <option value="<?php echo $produit['id']; ?>" data-prix="<?php echo $produit['prix_unitaire']; ?>">
-                                        <?php echo htmlspecialchars($produit['nom']) . ' - ' . $produit['quantite_unite'] . $produit['unite_symbole'] . ' (' . number_format($produit['prix_unitaire'], 0, ',', ' ') . ' Ar)'; ?>
+                                    <option value="<?php echo $pu['produit_unite_id']; ?>" data-prix="<?php echo $pu['prix_unitaire']; ?>">
+                                        <?php echo htmlspecialchars($pu['designation_complete']); ?>
                                     </option>
                                     <?php endwhile; ?>
                                 </select>
@@ -958,7 +969,7 @@ $produits_result = mysqli_query($conn, $produits_query);
                             </div>
                             <div class="form-group">
                                 <label>Prix U. (Ar)</label>
-                                <input type="number" name="prix[]" class="prix-input" step="0.01" required readonly style="background: #f0f0f0;">
+                                <input type="text" class="prix-display" readonly style="background: #f0f0f0; font-weight: bold;">
                             </div>
                             <div class="form-group">
                                 <label>Total (Ar)</label>
@@ -1049,7 +1060,7 @@ $produits_result = mysqli_query($conn, $produits_query);
         function updatePrice(select) {
             const row = select.closest('.produit-row');
             const prix = select.options[select.selectedIndex].getAttribute('data-prix');
-            row.querySelector('.prix-input').value = prix || '';
+            row.querySelector('.prix-display').value = prix ? parseFloat(prix).toLocaleString('fr-FR') + ' Ar' : '';
             calculateTotal();
         }
 
@@ -1057,8 +1068,9 @@ $produits_result = mysqli_query($conn, $produits_query);
         function calculateTotal() {
             let total = 0;
             document.querySelectorAll('.produit-row').forEach(row => {
+                const select = row.querySelector('.produit-select');
                 const qte = parseFloat(row.querySelector('.quantite-input').value) || 0;
-                const prix = parseFloat(row.querySelector('.prix-input').value) || 0;
+                const prix = parseFloat(select.options[select.selectedIndex].getAttribute('data-prix')) || 0;
                 const sousTotal = qte * prix;
                 row.querySelector('.total-input').value = sousTotal > 0 ? sousTotal.toLocaleString('fr-FR') + ' Ar' : '';
                 total += sousTotal;

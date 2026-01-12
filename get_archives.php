@@ -1,51 +1,53 @@
 <?php
-//get_archives.php - AFFICHAGE READONLY DES FACTURES PAYÉES
+// get_archives.php - VERSION CORRIGÉE FINALE (READONLY, MONTANTS FIGÉS)
+
 include "config.php";
 
 $client_id = mysqli_real_escape_string($conn, $_GET['client_id']);
 
-// Récupérer les informations du client
+// Infos client
 $client_query = "SELECT nom_complet, telephone, adresse FROM clients WHERE id = '$client_id'";
 $client_result = mysqli_query($conn, $client_query);
 $client = mysqli_fetch_assoc($client_result);
 
-// Récupérer les factures PAYÉES du client avec infos utilisateur
+// FACTURES PAYÉES (montants figés, structure identique à get_factures.php)
 $factures_query = "SELECT 
-                    d.numero_facture,
-                    d.date_dette,
-                    d.date_modification as date_paiement_complet,
-                    u.nom_complet as vendeur_nom,
-                    u.pseudo as vendeur_pseudo,
-                    SUM(d.montant_total) as total_facture,
-                    SUM(d.montant_paye) as total_paye
-                   FROM dettes d
-                   JOIN utilisateurs u ON d.enregistre_par = u.id
-                   WHERE d.client_id = '$client_id' 
-                   AND d.statut = 'payee'
-                   GROUP BY d.numero_facture, d.date_dette, d.date_modification, u.nom_complet, u.pseudo
-                   ORDER BY d.date_modification DESC";
+        d.numero_facture,
+        d.date_dette,
+        MAX(d.date_modification) AS date_paiement_complet,
+        u.nom_complet AS vendeur_nom,
+        u.pseudo AS vendeur_pseudo,
+        SUM(d.montant_total) AS total_facture,
+        SUM(d.montant_paye) AS total_paye
+    FROM dettes d
+    JOIN utilisateurs u ON d.enregistre_par = u.id
+    WHERE d.client_id = '$client_id'
+      AND d.statut = 'payee'
+    GROUP BY d.numero_facture, d.date_dette, u.nom_complet, u.pseudo
+    ORDER BY date_paiement_complet DESC";
+
 $factures_result = mysqli_query($conn, $factures_query);
 
-// Récupérer l'historique des paiements avec infos utilisateur ET date_creation
+// Historique des paiements
 $paiements_query = "SELECT 
-                        p.dette_id,
-                        d.numero_facture,
-                        p.montant_paye,
-                        p.reference_paiement,
-                        p.date_paiement,
-                        p.date_creation,
-                        u.nom_complet as enregistre_par_nom,
-                        u.pseudo as enregistre_par_pseudo
-                    FROM paiements_dette p
-                    JOIN dettes d ON p.dette_id = d.id
-                    JOIN utilisateurs u ON p.enregistre_par = u.id
-                    WHERE d.client_id = '$client_id' AND d.statut = 'payee'
-                    ORDER BY p.date_creation DESC, p.id DESC";
+        p.dette_id,
+        d.numero_facture,
+        p.montant_paye,
+        p.reference_paiement,
+        p.date_paiement,
+        p.date_creation,
+        u.pseudo AS enregistre_par_pseudo
+    FROM paiements_dette p
+    JOIN dettes d ON p.dette_id = d.id
+    JOIN utilisateurs u ON p.enregistre_par = u.id
+    WHERE d.client_id = '$client_id'
+      AND d.statut = 'payee'
+    ORDER BY p.date_creation DESC, p.id DESC";
+
 $paiements_result = mysqli_query($conn, $paiements_query);
 
-// Organiser les paiements par facture
 $paiements_par_facture = [];
-while($paiement = mysqli_fetch_assoc($paiements_result)){
+while ($paiement = mysqli_fetch_assoc($paiements_result)) {
     $paiements_par_facture[$paiement['numero_facture']][] = $paiement;
 }
 ?>
@@ -151,35 +153,23 @@ while($paiement = mysqli_fetch_assoc($paiements_result)){
         text-align: right;
     }
 
-    .facture-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 20px 0;
-    }
+.facture-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;     /* ← très important ! */
+}
 
-    .facture-table th,
-    .facture-table td {
-        padding: 10px;
-        text-align: left;
-        border-bottom: 1px dashed #ccc;
-    }
+.facture-table th,
+.facture-table td {
+    padding: 10px 8px;
+    border-bottom: 1px dashed #ccc;
+}
 
-    .facture-table th {
-        background: #f8f9fa;
-        font-weight: bold;
-    }
-
-    .facture-table td {
-        font-size: 14px;
-    }
-
-    .facture-table td.text-center {
-        text-align: center;
-    }
-
-    .facture-table td.text-right {
-        text-align: right;
-    }
+.facture-table th:nth-child(1), td:nth-child(1) { width: 5%;    text-align: center; }
+.facture-table th:nth-child(2), td:nth-child(2) { width: 45%;   text-align: left;   }   /* Produit ← prend le plus de place */
+.facture-table th:nth-child(3), td:nth-child(3) { width: 12%;   text-align: center; }
+.facture-table th:nth-child(4), td:nth-child(4) { width: 18%;   text-align: right;  }
+.facture-table th:nth-child(5), td:nth-child(5) { width: 20%;   text-align: right;  }
 
     .facture-totals {
         margin-top: 20px;
@@ -363,11 +353,10 @@ while($paiement = mysqli_fetch_assoc($paiements_result)){
     }
 </style>
 
+<!-- ========================= AFFICHAGE ========================= -->
+
 <div class="archive-header">
-    <h2>
-        <i class="fas fa-archive"></i>
-        Archives - <?php echo htmlspecialchars($client['nom_complet']); ?>
-    </h2>
+    <h2><i class="fas fa-archive"></i> Archives - <?php echo htmlspecialchars($client['nom_complet']); ?></h2>
     <button class="btn-back" onclick="backToList()">
         <i class="fas fa-arrow-left"></i> Retour
     </button>
@@ -375,43 +364,39 @@ while($paiement = mysqli_fetch_assoc($paiements_result)){
 
 <div class="readonly-notice">
     <i class="fas fa-lock"></i>
-    <div>
-        <strong>Mode Lecture Seule</strong> - Ces factures sont archivées et ne peuvent plus être modifiées ni supprimées.
-    </div>
+    <strong>Lecture seule :</strong> factures totalement payées et archivées.
 </div>
 
-<?php 
+<?php
 $facture_count = 0;
-while($facture = mysqli_fetch_assoc($factures_result)): 
+while ($facture = mysqli_fetch_assoc($factures_result)):
     $facture_count++;
-    
-    // Récupérer les produits de cette facture
-    $numero_facture_escaped = mysqli_real_escape_string($conn, $facture['numero_facture']);
-    $produits_query = "SELECT 
-                        p.nom as produit_nom,
-                        p.quantite_unite,
-                        u.symbole,
-                        d.quantite,
-                        d.prix_unitaire_fige,
-                        (d.quantite * d.prix_unitaire_fige) as total_ligne
-                       FROM dettes d
-                       JOIN produits p ON d.produit_id = p.id
-                       JOIN unites u ON p.unite_id = u.id
-                       WHERE d.numero_facture = '$numero_facture_escaped'
-                       ORDER BY d.id";
+
+    $numero_facture = mysqli_real_escape_string($conn, $facture['numero_facture']);
+
+    // PRODUITS — IDENTIQUE À get_factures.php
+    $produits_query = "SELECT
+            p.nom AS produit_nom,
+            u.symbole,
+            d.quantite,
+            d.prix_unitaire_fige,
+            d.montant_total AS total_ligne
+        FROM dettes d
+        JOIN produits_unites pu ON d.produit_unite_id = pu.id
+        JOIN produits p ON pu.produit_id = p.id
+        JOIN unites u ON pu.unite_id = u.id
+        WHERE d.numero_facture = '$numero_facture'
+        ORDER BY d.id";
+
     $produits_result = mysqli_query($conn, $produits_query);
 ?>
 
 <div class="facture-card">
-    <div class="archive-badge">
-        <i class="fas fa-check-circle"></i>
-        PAYÉE - Archivée
-    </div>
+    <div class="archive-badge">✔ PAYÉE</div>
 
     <div class="facture-header">
         <div class="store-name">E-VAROOTRA STORE MAMAN'I NDOH</div>
-        <div>Adresse : Ampisinkinana</div>
-        <div>Téléphone : 0346046865</div>
+        <div>Ampisinkinana — 034 60 468 65</div>
     </div>
 
     <div class="facture-numero">
@@ -419,127 +404,90 @@ while($facture = mysqli_fetch_assoc($factures_result)):
     </div>
 
     <div class="facture-info">
-        <div class="facture-info-left">
-            <div><strong>Date émission :</strong> <?php echo date('d/m/Y', strtotime($facture['date_dette'])); ?></div>
-            <div><strong>Vendu par :</strong> <?php echo htmlspecialchars($facture['vendeur_pseudo']); ?></div>
+        <div>
+            <strong>Date :</strong> <?php echo date('d/m/Y', strtotime($facture['date_dette'])); ?><br>
+            <strong>Vendeur :</strong> <?php echo htmlspecialchars($facture['vendeur_pseudo']); ?>
         </div>
-        <div class="facture-info-right">
-            <div><strong>CLIENT</strong></div>
-            <div><strong>Nom :</strong> <?php echo htmlspecialchars($client['nom_complet']); ?></div>
-            <div><strong>Tél :</strong> <?php echo htmlspecialchars($client['telephone']); ?></div>
-            <div><strong>Adresse :</strong> <?php echo htmlspecialchars($client['adresse']); ?></div>
+        <div style="text-align:right">
+            <strong>CLIENT</strong><br>
+            <?php echo htmlspecialchars($client['nom_complet']); ?><br>
+            <?php echo htmlspecialchars($client['telephone']); ?><br>
+            <?php echo htmlspecialchars($client['adresse']); ?>
         </div>
     </div>
-
-    <div class="divider"></div>
 
     <table class="facture-table">
         <thead>
             <tr>
-                <th style="width: 40px;">#</th>
+                <th>#</th>
                 <th>Produit</th>
-                <th class="text-center" style="width: 100px;">Qté</th>
-                <th class="text-right" style="width: 120px;">PU (Ar)</th>
-                <th class="text-right" style="width: 120px;">Total (Ar)</th>
+                <th class="text-center">Qté</th>
+                <th class="text-right">PU</th>
+                <th class="text-right">Total</th>
             </tr>
         </thead>
         <tbody>
-            <?php 
-            $index = 1;
-            while($produit = mysqli_fetch_assoc($produits_result)): 
-            ?>
+        <?php $i = 1; while ($p = mysqli_fetch_assoc($produits_result)): ?>
             <tr>
-                <td><?php echo $index++; ?></td>
-                <td><?php echo htmlspecialchars($produit['produit_nom']) . ' ' . $produit['quantite_unite'] . $produit['symbole']; ?></td>
-                <td class="text-center"><?php echo $produit['quantite']; ?></td>
-                <td class="text-right"><?php echo number_format($produit['prix_unitaire_fige'], 0, ',', ' '); ?></td>
-                <td class="text-right"><?php echo number_format($produit['total_ligne'], 0, ',', ' '); ?></td>
+                <td><?php echo $i++; ?></td>
+                <td><?php echo htmlspecialchars($p['produit_nom']); ?></td>
+                <td>
+                    <?php echo number_format($p['quantite'], 0, ',', ' ') . ' ' . htmlspecialchars($p['symbole']); ?>
+                </td>
+                <td class="text-right"><?php echo number_format($p['prix_unitaire_fige'], 0, ',', ' '); ?></td>
+                <td class="text-right"><?php echo number_format($p['total_ligne'], 0, ',', ' '); ?></td>
             </tr>
-            <?php endwhile; ?>
+        <?php endwhile; ?>
         </tbody>
     </table>
 
-    <div class="divider"></div>
-
     <div class="facture-totals">
         <div class="total-line">
-            <span>Sous-total</span>
-            <span><?php echo number_format($facture['total_facture'], 0, ',', ' '); ?> Ar</span>
+            <span>Total</span>
+            <span>
+            <?php echo number_format($facture['total_facture'], 0, ',', ' '); ?> Ar
+            </span>
         </div>
-        <div class="total-line">
-            <span>Remise</span>
-            <span>0 Ar</span>
-        </div>
+
         <div class="total-line main">
-            <span>TOTAL PAYÉ</span>
-            <span><?php echo number_format($facture['total_paye'], 0, ',', ' '); ?> Ar</span>
+            <span>Total payé</span>
+            <span>
+                <?php echo number_format($facture['total_paye'], 0, ',', ' '); ?> Ar
+            </span>
         </div>
     </div>
+
 
     <div class="status-paid-archive">
-        <h3>
-            <i class="fas fa-check-double"></i>
-            DETTE TOTALEMENT PAYÉE
-        </h3>
-        <div class="payment-date">
-            <i class="fas fa-calendar-check"></i>
-            Payée le <?php echo date('d/m/Y à H:i', strtotime($facture['date_paiement_complet'])); ?>
-        </div>
+        ✔ Payée le <?php echo date('d/m/Y à H:i', strtotime($facture['date_paiement_complet'])); ?>
     </div>
 
-    <?php if(isset($paiements_par_facture[$facture['numero_facture']])): ?>
+    <?php if (!empty($paiements_par_facture[$facture['numero_facture']])): ?>
     <div class="historique-paiements">
-        <h4>
-            <i class="fas fa-history"></i>
-            Historique des Paiements
-        </h4>
-        <?php foreach($paiements_par_facture[$facture['numero_facture']] as $paiement): ?>
-        <div class="paiement-item">
-            <div class="paiement-item-left">
-                <div class="paiement-ref">
-                    <i class="fas fa-receipt"></i>
-                    Réf: <?php echo htmlspecialchars($paiement['reference_paiement']); ?>
-                </div>
-                <div class="paiement-date">
-                    <i class="fas fa-calendar"></i>
-                    <?php 
-                    // Utiliser date_creation pour avoir l'heure exacte
-                    $datetime = $paiement['date_creation'] ?? $paiement['date_paiement'];
-                    echo date('d/m/Y à H:i', strtotime($datetime)); 
-                    ?> 
-                    - Enregistré par <?php echo htmlspecialchars($paiement['enregistre_par_pseudo'] ?? 'Inconnu'); ?>
-                </div>
-            </div>
-            <div class="paiement-montant">
-                <?php echo number_format($paiement['montant_paye'], 0, ',', ' '); ?> Ar
-            </div>
-        </div>
+        <h4>Historique des paiements</h4>
+        <?php foreach ($paiements_par_facture[$facture['numero_facture']] as $pay): ?>
+<div class="paiement-item">
+    <div>
+        Réf: <?php echo htmlspecialchars($pay['reference_paiement']); ?><br>
+        <?php 
+        $datetime = $pay['date_creation'] ?? $pay['date_paiement'] ?? '';
+        echo date('d/m/Y H:i', strtotime($datetime)); 
+        ?> 
+        - Enregistré par <?php echo htmlspecialchars($pay['enregistre_par_pseudo'] ?? 'Inconnu'); ?>
+    </div>
+    <strong><?php echo number_format($pay['montant_paye'], 0, ',', ' '); ?> Ar</strong>
+</div>
         <?php endforeach; ?>
     </div>
     <?php endif; ?>
 
-    <div class="divider"></div>
-
-    <div class="signatures">
-        <div>Signature vendeur : __________</div>
-        <div>Signature client : __________</div>
-    </div>
-
-    <div class="thank-you">
-        Merci de votre confiance !
-    </div>
-
-    <button onclick="window.print()" class="btn-print">
-        <i class="fas fa-print"></i> Imprimer cette facture
-    </button>
+    <button class="btn-print" onclick="window.print()">🖨 Imprimer</button>
 </div>
 
 <?php endwhile; ?>
 
-<?php if($facture_count == 0): ?>
-<div style="text-align: center; padding: 80px; background: white; border-radius: 15px;">
-    <i class="fas fa-inbox" style="font-size: 100px; color: #e0e0e0; margin-bottom: 25px;"></i>
-    <h3 style="color: #0a4d4d; margin-bottom: 15px; font-size: 26px;">Aucune archive disponible</h3>
-    <p style="color: #999; font-size: 16px;">Ce client n'a pas encore de factures payées</p>
+<?php if ($facture_count === 0): ?>
+<div style="text-align:center;padding:60px">
+    <h3>Aucune facture archivée</h3>
 </div>
 <?php endif; ?>

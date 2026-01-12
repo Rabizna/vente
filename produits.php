@@ -1,34 +1,66 @@
 <?php
-//produits.php
+// produits.php - Version avec historique des prix (CORRIGÉE)
 include "config.php";
 
-if(!isset($_SESSION['user'])){
+if (!isset($_SESSION['user'])) {
     header("Location: login.php");
     exit();
 }
 
 $nom_utilisateur = htmlspecialchars($_SESSION['nom']);
-$user_id = $_SESSION['user_id'] ?? 1; // À adapter selon votre système
 
-// Gestion des actions (Ajouter, Modifier, Supprimer)
+// Récupération de l'ID utilisateur de manière flexible
+$user_id = null;
+
+// Méthode 1 : Vérifier $_SESSION['user']
+if (isset($_SESSION['user']) && is_numeric($_SESSION['user'])) {
+    $user_id = intval($_SESSION['user']);
+}
+
+// Méthode 2 : Chercher par pseudo si disponible
+if ($user_id === null && isset($_SESSION['pseudo'])) {
+    $pseudo = mysqli_real_escape_string($conn, $_SESSION['pseudo']);
+    $user_query = "SELECT id FROM utilisateurs WHERE pseudo = '$pseudo' LIMIT 1";
+    $user_result = mysqli_query($conn, $user_query);
+    if ($user_result && mysqli_num_rows($user_result) > 0) {
+        $user_row = mysqli_fetch_assoc($user_result);
+        $user_id = intval($user_row['id']);
+    }
+}
+
+// Méthode 3 : Chercher par nom complet si disponible
+if ($user_id === null && isset($_SESSION['nom'])) {
+    $nom = mysqli_real_escape_string($conn, $_SESSION['nom']);
+    $user_query = "SELECT id FROM utilisateurs WHERE nom_complet = '$nom' LIMIT 1";
+    $user_result = mysqli_query($conn, $user_query);
+    if ($user_result && mysqli_num_rows($user_result) > 0) {
+        $user_row = mysqli_fetch_assoc($user_result);
+        $user_id = intval($user_row['id']);
+    }
+}
+
+// Méthode 4 : Prendre le premier utilisateur en dernier recours (temporaire pour debug)
+if ($user_id === null) {
+    $fallback_query = "SELECT id FROM utilisateurs ORDER BY id ASC LIMIT 1";
+    $fallback_result = mysqli_query($conn, $fallback_query);
+    if ($fallback_result && mysqli_num_rows($fallback_result) > 0) {
+        $fallback_row = mysqli_fetch_assoc($fallback_result);
+        $user_id = intval($fallback_row['id']);
+    }
+}
+
 $message = "";
 $message_type = "";
 
 // AJOUTER UN PRODUIT
-if(isset($_POST['action']) && $_POST['action'] == 'ajouter'){
+if (isset($_POST['action']) && $_POST['action'] == 'ajouter_produit') {
     $nom = mysqli_real_escape_string($conn, $_POST['nom']);
     $description = mysqli_real_escape_string($conn, $_POST['description']);
-    $quantite_unite = mysqli_real_escape_string($conn, $_POST['quantite_unite']);
-    $unite_id = mysqli_real_escape_string($conn, $_POST['unite_id']);
-    $prix_unitaire = mysqli_real_escape_string($conn, $_POST['prix_unitaire']);
-    $stock_disponible = mysqli_real_escape_string($conn, $_POST['stock_disponible']);
-    $seuil_alerte = mysqli_real_escape_string($conn, $_POST['seuil_alerte']);
-    
-    $sql = "INSERT INTO produits (nom, description, quantite_unite, unite_id, prix_unitaire, stock_disponible, seuil_alerte) 
-            VALUES ('$nom', '$description', '$quantite_unite', '$unite_id', '$prix_unitaire', '$stock_disponible', '$seuil_alerte')";
-    
-    if(mysqli_query($conn, $sql)){
-        $message = "Produit ajouté avec succès !";
+
+    $sql = "INSERT INTO produits (nom, description) VALUES ('$nom', '$description')";
+
+    if (mysqli_query($conn, $sql)) {
+        $message = "Produit ajouté avec succès ! Vous pouvez maintenant ajouter des unités.";
         $message_type = "success";
     } else {
         $message = "Erreur : " . mysqli_error($conn);
@@ -36,28 +68,15 @@ if(isset($_POST['action']) && $_POST['action'] == 'ajouter'){
     }
 }
 
-// MODIFIER UN PRODUIT
-if(isset($_POST['action']) && $_POST['action'] == 'modifier'){
+// MODIFIER UN PRODUIT (nom + description)
+if (isset($_POST['action']) && $_POST['action'] == 'modifier_produit') {
     $id = mysqli_real_escape_string($conn, $_POST['id']);
     $nom = mysqli_real_escape_string($conn, $_POST['nom']);
     $description = mysqli_real_escape_string($conn, $_POST['description']);
-    $quantite_unite = mysqli_real_escape_string($conn, $_POST['quantite_unite']);
-    $unite_id = mysqli_real_escape_string($conn, $_POST['unite_id']);
-    $prix_unitaire = mysqli_real_escape_string($conn, $_POST['prix_unitaire']);
-    $stock_disponible = mysqli_real_escape_string($conn, $_POST['stock_disponible']);
-    $seuil_alerte = mysqli_real_escape_string($conn, $_POST['seuil_alerte']);
-    
-    $sql = "UPDATE produits SET 
-            nom='$nom', 
-            description='$description', 
-            quantite_unite='$quantite_unite', 
-            unite_id='$unite_id', 
-            prix_unitaire='$prix_unitaire', 
-            stock_disponible='$stock_disponible', 
-            seuil_alerte='$seuil_alerte'
-            WHERE id='$id'";
-    
-    if(mysqli_query($conn, $sql)){
+
+    $sql = "UPDATE produits SET nom='$nom', description='$description' WHERE id='$id'";
+
+    if (mysqli_query($conn, $sql)) {
         $message = "Produit modifié avec succès !";
         $message_type = "success";
     } else {
@@ -66,29 +85,116 @@ if(isset($_POST['action']) && $_POST['action'] == 'modifier'){
     }
 }
 
-// SUPPRIMER UN PRODUIT (désactiver)
-if(isset($_GET['supprimer'])){
+// AJOUTER UNE UNITÉ À UN PRODUIT
+if (isset($_POST['action']) && $_POST['action'] == 'ajouter_unite') {
+    $produit_id = mysqli_real_escape_string($conn, $_POST['produit_id']);
+    $unite_id = mysqli_real_escape_string($conn, $_POST['unite_id']);
+    $prix_unitaire = floatval($_POST['prix_unitaire']);
+
+    $check = "SELECT id FROM produits_unites WHERE produit_id='$produit_id' AND unite_id='$unite_id'";
+    $check_result = mysqli_query($conn, $check);
+
+    if (mysqli_num_rows($check_result) > 0) {
+        $message = "Cette unité existe déjà pour ce produit !";
+        $message_type = "error";
+    } else {
+        $sql = "INSERT INTO produits_unites (produit_id, unite_id, prix_unitaire) 
+                VALUES ('$produit_id', '$unite_id', '$prix_unitaire')";
+
+        if (mysqli_query($conn, $sql)) {
+            $message = "Unité ajoutée avec succès !";
+            $message_type = "success";
+        } else {
+            $message = "Erreur : " . mysqli_error($conn);
+            $message_type = "error";
+        }
+    }
+}
+
+// MODIFIER LE PRIX D'UNE UNITÉ + ENREGISTREMENT HISTORIQUE (CORRIGÉ)
+if (isset($_POST['action']) && $_POST['action'] == 'modifier_prix') {
+    $pu_id = intval($_POST['pu_id']); // Conversion en entier
+    $nouveau_prix = floatval($_POST['prix_unitaire']);
+
+    // Récupération de l'ancien prix
+    $query_old = "SELECT prix_unitaire FROM produits_unites WHERE id = $pu_id";
+    $result_old = mysqli_query($conn, $query_old);
+
+    if (!$result_old || mysqli_num_rows($result_old) === 0) {
+        $message = "Unité introuvable !";
+        $message_type = "error";
+    } else {
+        $row_old = mysqli_fetch_assoc($result_old);
+        $ancien_prix = floatval($row_old['prix_unitaire']);
+
+        // Vérification que l'utilisateur existe bien
+        $check_user = "SELECT id FROM utilisateurs WHERE id = $user_id";
+        $check_user_result = mysqli_query($conn, $check_user);
+        
+        if (!$check_user_result || mysqli_num_rows($check_user_result) === 0) {
+            $message = "Erreur : Utilisateur invalide. Veuillez vous reconnecter.";
+            $message_type = "error";
+        } else {
+            // Mise à jour du prix
+            $sql_update = "UPDATE produits_unites 
+                           SET prix_unitaire = $nouveau_prix,
+                               date_modification = NOW()
+                           WHERE id = $pu_id";
+
+            if (mysqli_query($conn, $sql_update)) {
+                // Enregistrement dans l'historique avec vérification
+                $sql_histo = "INSERT INTO historique_prix 
+                             (produits_unites_id, ancien_prix, nouveau_prix, utilisateur_id, date_modification)
+                             VALUES 
+                             ($pu_id, $ancien_prix, $nouveau_prix, $user_id, NOW())";
+
+                if (mysqli_query($conn, $sql_histo)) {
+                    $message = "Prix modifié avec succès et historique enregistré !";
+                    $message_type = "success";
+                } else {
+                    // Le prix est modifié mais l'historique a échoué
+                    $message = "Prix modifié mais erreur lors de l'enregistrement de l'historique : " . mysqli_error($conn);
+                    $message_type = "error";
+                }
+            } else {
+                $message = "Erreur lors de la modification : " . mysqli_error($conn);
+                $message_type = "error";
+            }
+        }
+    }
+}
+
+// SUPPRIMER UNE UNITÉ
+if (isset($_GET['supprimer_unite'])) {
+    $pu_id = mysqli_real_escape_string($conn, $_GET['supprimer_unite']);
+    $sql = "DELETE FROM produits_unites WHERE id='$pu_id'";
+
+    if (mysqli_query($conn, $sql)) {
+        $message = "Unité supprimée avec succès !";
+        $message_type = "success";
+    }
+}
+
+// SUPPRIMER UN PRODUIT (passage inactif)
+if (isset($_GET['supprimer'])) {
     $id = mysqli_real_escape_string($conn, $_GET['supprimer']);
     $sql = "UPDATE produits SET actif=0 WHERE id='$id'";
-    
-    if(mysqli_query($conn, $sql)){
+
+    if (mysqli_query($conn, $sql)) {
         $message = "Produit supprimé avec succès !";
         $message_type = "success";
     }
 }
 
-// RÉCUPÉRER TOUS LES PRODUITS
-$produits_query = "SELECT p.*, u.nom as unite_nom, u.symbole as unite_symbole 
-                   FROM produits p 
-                   JOIN unites u ON p.unite_id = u.id 
-                   WHERE p.actif = 1 
-                   ORDER BY p.date_creation DESC";
+// RÉCUPÉRER TOUS LES PRODUITS ACTIFS
+$produits_query = "SELECT * FROM produits WHERE actif = 1 ORDER BY date_creation DESC";
 $produits_result = mysqli_query($conn, $produits_query);
 
-// RÉCUPÉRER LES UNITÉS
-$unites_query = "SELECT * FROM unites WHERE actif = 1";
+// RÉCUPÉRER LES UNITÉS POUR LE FORMULAIRE D'AJOUT
+$unites_query = "SELECT * FROM unites WHERE actif = 1 ORDER BY nom";
 $unites_result = mysqli_query($conn, $unites_query);
 ?>
+
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -97,12 +203,7 @@ $unites_result = mysqli_query($conn, $unites_query);
     <title>E-varootra - Produits</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin:0; padding:0; box-sizing:border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f5f5f5;
@@ -117,7 +218,6 @@ $unites_result = mysqli_query($conn, $unites_query);
             align-items: center;
             padding: 0 30px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            position: relative;
             z-index: 100;
         }
 
@@ -151,10 +251,7 @@ $unites_result = mysqli_query($conn, $unites_query);
             border: 3px solid #ff8c42;
         }
 
-        .container {
-            display: flex;
-            height: calc(100vh - 70px);
-        }
+        .container { display: flex; height: calc(100vh - 70px); }
 
         .sidebar {
             width: 320px;
@@ -163,11 +260,13 @@ $unites_result = mysqli_query($conn, $unites_query);
             display: flex;
             flex-direction: column;
             box-shadow: 4px 0 15px rgba(0,0,0,0.1);
+            overflow: hidden;
         }
 
         .menu {
             flex: 1;
             padding: 0 15px;
+            overflow: hidden;
         }
 
         .menu-item {
@@ -184,15 +283,8 @@ $unites_result = mysqli_query($conn, $unites_query);
             transition: all 0.3s ease;
         }
 
-        .menu-item:hover {
-            background: rgba(255, 255, 255, 0.1);
-            transform: translateX(5px);
-        }
-
-        .menu-item.active {
-            background: #ff8c42;
-            box-shadow: 0 4px 15px rgba(255, 140, 66, 0.3);
-        }
+        .menu-item:hover { background: rgba(255,255,255,0.1); transform: translateX(5px); }
+        .menu-item.active { background: #ff8c42; box-shadow: 0 4px 15px rgba(255,140,66,0.3); }
 
         .logout-btn {
             margin: 20px 15px;
@@ -214,7 +306,7 @@ $unites_result = mysqli_query($conn, $unites_query);
         .logout-btn:hover {
             background: #c9302c;
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(217, 83, 79, 0.4);
+            box-shadow: 0 6px 20px rgba(217,83,79,0.4);
         }
 
         .main-content {
@@ -234,6 +326,38 @@ $unites_result = mysqli_query($conn, $unites_query);
         .page-header h1 {
             color: #0a4d4d;
             font-size: 32px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .search-container {
+            position: relative;
+            width: 400px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 45px 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+            font-size: 18px;
         }
 
         .btn-add {
@@ -253,10 +377,9 @@ $unites_result = mysqli_query($conn, $unites_query);
 
         .btn-add:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 20px rgba(102,126,234,0.4);
         }
 
-        /* Message Alert */
         .alert {
             padding: 15px 20px;
             border-radius: 10px;
@@ -265,95 +388,127 @@ $unites_result = mysqli_query($conn, $unites_query);
             animation: slideDown 0.3s ease;
         }
 
-        .alert.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .alert.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
+        .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert.error   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 
         @keyframes slideDown {
-            from {
-                opacity: 0;
-                transform: translateY(-10px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity:0; transform:translateY(-10px); }
+            to   { opacity:1; transform:translateY(0); }
         }
 
-        /* Table */
-        .table-container {
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 25px;
+        }
+
+        .product-card {
             background: white;
             border-radius: 15px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            position: relative;
             overflow: hidden;
         }
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
+        .product-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 5px;
+            height: 100%;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
         }
 
-        thead {
-            background: linear-gradient(135deg, #0a4d4d 0%, #0d6666 100%);
-            color: white;
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
         }
 
-        thead th {
-            padding: 20px;
-            text-align: left;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 14px;
-            letter-spacing: 0.5px;
-        }
-
-        tbody tr {
-            border-bottom: 1px solid #f0f0f0;
-            transition: all 0.3s ease;
-        }
-
-        tbody tr:hover {
-            background: #f8f9fa;
-            transform: scale(1.01);
-        }
-
-        tbody td {
-            padding: 18px 20px;
-            color: #333;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .badge.low-stock {
-            background: #ff4757;
-            color: white;
-        }
-
-        .badge.normal {
-            background: #2ed573;
-            color: white;
-        }
-
-        .action-btns {
+        .product-header {
             display: flex;
-            gap: 10px;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
         }
+
+        .product-name {
+            font-size: 22px;
+            font-weight: bold;
+            color: #0a4d4d;
+            margin-bottom: 5px;
+        }
+
+        .product-description {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .product-actions { display: flex; gap: 8px; }
 
         .btn-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .btn-edit   { background: #ffa502; color: white; }
+        .btn-edit:hover   { background: #ff7f00; transform: scale(1.1); }
+        .btn-delete { background: #ff4757; color: white; }
+        .btn-delete:hover { background: #d63031; transform: scale(1.1); }
+        .btn-add-unit {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-add-unit:hover { transform: scale(1.1); box-shadow: 0 6px 15px rgba(102,126,234,0.4); }
+
+        .units-list { margin-top: 20px; }
+
+        .unit-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: linear-gradient(135deg, rgba(102,126,234,0.05) 0%, rgba(118,75,162,0.05) 100%);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .unit-item:hover {
+            border-color: rgba(102,126,234,0.3);
+            transform: translateX(5px);
+        }
+
+        .unit-info { flex: 1; }
+
+        .unit-name {
+            font-weight: 600;
+            color: #333;
+            font-size: 16px;
+            margin-bottom: 3px;
+        }
+
+        .unit-price {
+            color: #2ed573;
+            font-weight: bold;
+            font-size: 18px;
+        }
+
+        .unit-actions { display: flex; gap: 8px; }
+
+        .btn-small {
             width: 35px;
             height: 35px;
             border-radius: 8px;
@@ -366,27 +521,79 @@ $unites_result = mysqli_query($conn, $unites_query);
             font-size: 14px;
         }
 
-        .btn-edit {
-            background: #ffa502;
-            color: white;
+        .price-history {
+            margin-top: 25px;
+            padding-top: 15px;
+            border-top: 1px dashed #e0e0e0;
         }
 
-        .btn-edit:hover {
-            background: #ff7f00;
-            transform: scale(1.1);
+        .price-history h4 {
+            color: #0a4d4d;
+            margin-bottom: 12px;
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
-        .btn-delete {
-            background: #ff4757;
-            color: white;
+        .history-list {
+            max-height: 240px;
+            overflow-y: auto;
+            font-size: 13px;
         }
 
-        .btn-delete:hover {
-            background: #d63031;
-            transform: scale(1.1);
+        .history-item {
+            padding: 10px;
+            background: rgba(102,126,234,0.03);
+            border-radius: 8px;
+            margin-bottom: 8px;
         }
 
-        /* Modal */
+        .history-item:last-child { margin-bottom: 0; }
+
+        .history-price-change {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 6px 0;
+            color: #555;
+            font-weight: 600;
+        }
+
+        .price-old {
+            color: #666;
+        }
+
+        .price-arrow {
+            font-size: 18px;
+            margin: 0 8px;
+        }
+
+        .price-new {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 15px;
+        }
+
+        .price-increase {
+            color: #e74c3c !important;
+        }
+
+        .price-decrease {
+            color: #27ae60 !important;
+        }
+
+        .price-emoji {
+            font-size: 16px;
+        }
+
+        .history-date-user {
+            color: #888;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
         .modal {
             display: none;
             position: fixed;
@@ -399,38 +606,23 @@ $unites_result = mysqli_query($conn, $unites_query);
             animation: fadeIn 0.3s ease;
         }
 
-        .modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
 
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
+        @keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
 
         .modal-content {
             background: white;
             border-radius: 20px;
             padding: 40px;
             width: 90%;
-            max-width: 600px;
-            max-height: 90vh;
-            overflow-y: auto;
+            max-width: 550px;
             animation: slideUp 0.3s ease;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
         }
 
         @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(50px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity:0; transform:translateY(50px); }
+            to   { opacity:1; transform:translateY(0); }
         }
 
         .modal-header {
@@ -440,10 +632,7 @@ $unites_result = mysqli_query($conn, $unites_query);
             margin-bottom: 30px;
         }
 
-        .modal-header h2 {
-            color: #0a4d4d;
-            font-size: 28px;
-        }
+        .modal-header h2 { color: #0a4d4d; font-size: 28px; }
 
         .close-modal {
             background: none;
@@ -454,14 +643,9 @@ $unites_result = mysqli_query($conn, $unites_query);
             transition: all 0.3s ease;
         }
 
-        .close-modal:hover {
-            color: #ff4757;
-            transform: rotate(90deg);
-        }
+        .close-modal:hover { color: #ff4757; transform: rotate(90deg); }
 
-        .form-group {
-            margin-bottom: 25px;
-        }
+        .form-group { margin-bottom: 25px; }
 
         .form-group label {
             display: block;
@@ -488,13 +672,7 @@ $unites_result = mysqli_query($conn, $unites_query);
         .form-group select:focus {
             outline: none;
             border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            box-shadow: 0 0 0 3px rgba(102,126,234,0.1);
         }
 
         .btn-submit {
@@ -514,34 +692,32 @@ $unites_result = mysqli_query($conn, $unites_query);
 
         .btn-submit:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 8px 25px rgba(102,126,234,0.4);
         }
 
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 80px 20px;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+
+        .empty-state i { font-size: 100px; color: #e0e0e0; margin-bottom: 20px; }
+
+        .empty-state h3 { font-size: 24px; color: #666; margin-bottom: 10px; }
+        .empty-state p  { color: #999; font-size: 16px; }
+
+        .no-units {
+            text-align: center;
+            padding: 30px;
             color: #999;
-        }
-
-        .empty-state i {
-            font-size: 80px;
-            margin-bottom: 20px;
-            opacity: 0.3;
-        }
-
-        .empty-state h3 {
-            font-size: 24px;
-            margin-bottom: 10px;
-        }
-
-        .price-display {
-            font-weight: bold;
-            color: #2ed573;
-            font-size: 16px;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
+
     <div class="header">
         <div class="logo">
             <span class="logo-text">E-VAROOTRA</span>
@@ -561,147 +737,198 @@ $unites_result = mysqli_query($conn, $unites_query);
                 <a href="client.php" class="menu-item">Client</a>
                 <a href="produits.php" class="menu-item active">Produits</a>
                 <a href="dette.php" class="menu-item">Dette</a>
-                <a href="archive.php" class="menu-item">Archive de dettes payées</a>
+                <a href="archive.php" class="menu-item">Archive</a>
             </div>
             <a href="logout.php" class="logout-btn">Déconnexion</a>
         </div>
 
         <div class="main-content">
             <div class="page-header">
-                <h1><i class="fas fa-box"></i> Gestion des Produits</h1>
-                <button class="btn-add" onclick="openModal('add')">
-                    <i class="fas fa-plus"></i> Ajouter un produit
+                <h1>
+                    <i class="fas fa-box"></i>
+                    Gestion des Produits
+                </h1>
+                <div class="search-container">
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        class="search-input" 
+                        placeholder="Rechercher un produit..."
+                        onkeyup="searchProducts()"
+                    >
+                    <i class="fas fa-search search-icon"></i>
+                </div>
+                <button class="btn-add" onclick="openModal('add-product')">
+                    <i class="fas fa-plus"></i> Nouveau Produit
                 </button>
             </div>
 
-            <?php if($message): ?>
+            <?php if ($message): ?>
                 <div class="alert <?php echo $message_type; ?>">
                     <?php echo $message; ?>
                 </div>
             <?php endif; ?>
 
-            <div class="table-container">
-                <?php if(mysqli_num_rows($produits_result) > 0): ?>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Produit</th>
-                            <th>Désignation</th>
-                            <th>Prix Unitaire</th>
-                            <th>Stock</th>
-                            <th>Statut</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while($produit = mysqli_fetch_assoc($produits_result)): ?>
-                        <tr>
-                            <td>
-                                <strong><?php echo htmlspecialchars($produit['nom']); ?></strong>
-                                <?php if($produit['description']): ?>
-                                <br><small style="color:#999;"><?php echo htmlspecialchars($produit['description']); ?></small>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <span style="font-weight:500;">
-                                    <?php echo $produit['quantite_unite'] . ' ' . $produit['unite_symbole']; ?>
-                                </span>
-                            </td>
-                            <td>
-                                <span class="price-display"><?php echo number_format($produit['prix_unitaire'], 0, ',', ' '); ?> Ar</span>
-                            </td>
-                            <td>
-                                <strong><?php echo $produit['stock_disponible']; ?></strong> en stock
-                            </td>
-                            <td>
-                                <?php if($produit['stock_disponible'] <= $produit['seuil_alerte']): ?>
-                                    <span class="badge low-stock">⚠️ Stock Bas</span>
-                                <?php else: ?>
-                                    <span class="badge normal">✓ Normal</span>
-                                <?php endif; ?>
-                            </td>
-                            <td>
-                                <div class="action-btns">
-                                    <button class="btn-icon btn-edit" onclick='editProduct(<?php echo json_encode($produit); ?>)' title="Modifier">
+            <?php if (mysqli_num_rows($produits_result) > 0): ?>
+            <div class="products-grid">
+                <?php while ($produit = mysqli_fetch_assoc($produits_result)): ?>
+                <?php
+                    $unites_produit_query = "
+                        SELECT pu.*, u.nom as unite_nom, u.symbole as unite_symbole 
+                        FROM produits_unites pu 
+                        JOIN unites u ON pu.unite_id = u.id 
+                        WHERE pu.produit_id = {$produit['id']} 
+                        AND pu.actif = 1 
+                        ORDER BY u.nom";
+                    $unites_produit_result = mysqli_query($conn, $unites_produit_query);
+
+                    $historique_query = "
+                        SELECT 
+                            hp.*,
+                            pu.produit_id,
+                            u.nom AS unite_nom,
+                            u.symbole AS unite_symbole,
+                            util.pseudo AS utilisateur_pseudo
+                        FROM historique_prix hp
+                        INNER JOIN produits_unites pu ON hp.produits_unites_id = pu.id
+                        INNER JOIN unites u ON pu.unite_id = u.id
+                        LEFT JOIN utilisateurs util ON hp.utilisateur_id = util.id
+                        WHERE pu.produit_id = {$produit['id']}
+                        ORDER BY hp.date_modification DESC
+                        LIMIT 10";
+                    $historique_result = mysqli_query($conn, $historique_query);
+                ?>
+
+                <div class="product-card">
+                    <div class="product-header">
+                        <div>
+                            <div class="product-name"><?php echo htmlspecialchars($produit['nom']); ?></div>
+                            <?php if ($produit['description']): ?>
+                            <div class="product-description"><?php echo htmlspecialchars($produit['description']); ?></div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="product-actions">
+                            <button class="btn-icon btn-add-unit" onclick='openModal("add-unit", <?php echo $produit["id"]; ?>)' title="Ajouter une unité">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                            <button class="btn-icon btn-edit" onclick='editProduct(<?php echo json_encode($produit); ?>)' title="Modifier">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn-icon btn-delete" onclick="deleteProduct(<?php echo $produit['id']; ?>)" title="Supprimer">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="units-list">
+                        <?php if (mysqli_num_rows($unites_produit_result) > 0): ?>
+                            <?php while ($pu = mysqli_fetch_assoc($unites_produit_result)): ?>
+                            <div class="unit-item">
+                                <div class="unit-info">
+                                    <div class="unit-name">
+                                        <i class="fas fa-tag"></i> 
+                                        <?php echo htmlspecialchars($pu['unite_nom']) . ' (' . $pu['unite_symbole'] . ')'; ?>
+                                    </div>
+                                    <div class="unit-price">
+                                        <?php echo number_format($pu['prix_unitaire'], 0, ',', ' '); ?> Ar
+                                    </div>
+                                </div>
+                                <div class="unit-actions">
+                                    <button class="btn-small btn-edit" onclick='editPrice(<?php echo json_encode($pu); ?>)' title="Modifier le prix">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <button class="btn-icon btn-delete" onclick="deleteProduct(<?php echo $produit['id']; ?>)" title="Supprimer">
+                                    <button class="btn-small btn-delete" onclick="deleteUnit(<?php echo $pu['id']; ?>)" title="Supprimer">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
-                <?php else: ?>
-                <div class="empty-state">
-                    <i class="fas fa-box-open"></i>
-                    <h3>Aucun produit disponible</h3>
-                    <p>Commencez par ajouter votre premier produit</p>
+                            </div>
+                            <?php endwhile; ?>
+                        <?php else: ?>
+                            <div class="no-units">
+                                <i class="fas fa-info-circle"></i> Aucune unité définie<br>
+                                Cliquez sur <i class="fas fa-plus"></i> pour en ajouter
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (mysqli_num_rows($historique_result) > 0): ?>
+                    <div class="price-history">
+                        <h4><i class="fas fa-history"></i> Historique récent des prix</h4>
+                        <div class="history-list">
+                            <?php while ($histo = mysqli_fetch_assoc($historique_result)): 
+                                $ancien = floatval($histo['ancien_prix']);
+                                $nouveau = floatval($histo['nouveau_prix']);
+                                $difference = $nouveau - $ancien;
+                                $pourcentage = $ancien > 0 ? abs(($difference / $ancien) * 100) : 0;
+                                
+                                // Déterminer la couleur et l'emoji
+                                $color_class = '';
+                                $emoji = '';
+                                if ($difference > 0) {
+                                    $color_class = 'price-increase';
+                                    $emoji = $pourcentage >= 20 ? '⏫' : '🔼';
+                                } elseif ($difference < 0) {
+                                    $color_class = 'price-decrease';
+                                    $emoji = $pourcentage >= 20 ? '⏬' : '🔽';
+                                } else {
+                                    $emoji = '➖';
+                                }
+                            ?>
+                            <div class="history-item">
+                                <div style="font-weight:600; color:#444;">
+                                    <?php echo htmlspecialchars($histo['unite_nom']) . ' (' . $histo['unite_symbole'] . ')'; ?>
+                                </div>
+                                <div class="history-price-change">
+                                    <span class="price-old">Ancien : <strong><?php echo number_format($ancien, 0, ',', ' '); ?> Ar</strong></span>
+                                    <span class="price-arrow">→</span>
+                                    <span class="price-new <?php echo $color_class; ?>">
+                                        <span class="price-emoji"><?php echo $emoji; ?></span>
+                                        Nouveau : <strong><?php echo number_format($nouveau, 0, ',', ' '); ?> Ar</strong>
+                                    </span>
+                                </div>
+                                <div class="history-date-user">
+                                    <i class="fas fa-calendar-alt"></i> 
+                                    <?php echo date('d/m/Y à H:i', strtotime($histo['date_modification'])); ?> 
+                                    par <strong>@<?php echo htmlspecialchars($histo['utilisateur_pseudo'] ?? 'inconnu'); ?></strong>
+                                </div>
+                            </div>
+                            <?php endwhile; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
                 </div>
-                <?php endif; ?>
+                <?php endwhile; ?>
             </div>
+            <?php else: ?>
+            <div class="empty-state">
+                <i class="fas fa-box-open"></i>
+                <h3>Aucun produit disponible</h3>
+                <p>Commencez par ajouter votre premier produit</p>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 
-    <!-- Modal Ajouter/Modifier -->
+    <!-- Modal Ajouter/Modifier Produit -->
     <div class="modal" id="productModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="modalTitle">Ajouter un produit</h2>
-                <button class="close-modal" onclick="closeModal()">&times;</button>
+                <h2 id="productModalTitle">Nouveau Produit</h2>
+                <button class="close-modal" onclick="closeModal('productModal')">×</button>
             </div>
             <form method="POST" id="productForm">
-                <input type="hidden" name="action" id="formAction" value="ajouter">
+                <input type="hidden" name="action" id="productAction" value="ajouter_produit">
                 <input type="hidden" name="id" id="productId">
 
                 <div class="form-group">
-                    <label>Nom du produit *</label>
-                    <input type="text" name="nom" id="nom" required placeholder="Ex: Farine, Riz, Sucre...">
+                    <label><i class="fas fa-box"></i> Nom du produit *</label>
+                    <input type="text" name="nom" id="productNom" required placeholder="Ex: Huile, Biscuits, Sucre...">
                 </div>
 
                 <div class="form-group">
-                    <label>Description</label>
-                    <textarea name="description" id="description" rows="3" placeholder="Description du produit (optionnel)"></textarea>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Quantité *</label>
-                        <input type="number" name="quantite_unite" id="quantite_unite" step="0.01" required placeholder="Ex: 50">
-                    </div>
-                    <div class="form-group">
-                        <label>Unité *</label>
-                        <select name="unite_id" id="unite_id" required>
-                            <option value="">-- Choisir --</option>
-                            <?php 
-                            mysqli_data_seek($unites_result, 0);
-                            while($unite = mysqli_fetch_assoc($unites_result)): 
-                            ?>
-                            <option value="<?php echo $unite['id']; ?>">
-                                <?php echo $unite['nom'] . ' (' . $unite['symbole'] . ')'; ?>
-                            </option>
-                            <?php endwhile; ?>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Prix unitaire (Ar) *</label>
-                        <input type="number" name="prix_unitaire" id="prix_unitaire" step="0.01" required placeholder="Ex: 45000">
-                    </div>
-                    <div class="form-group">
-                        <label>Stock initial *</label>
-                        <input type="number" name="stock_disponible" id="stock_disponible" step="0.01" required placeholder="Ex: 100">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Seuil d'alerte *</label>
-                    <input type="number" name="seuil_alerte" id="seuil_alerte" step="0.01" required placeholder="Ex: 10">
-                    <small style="color:#999;">Le système vous alertera quand le stock atteint ce niveau</small>
+                    <label><i class="fas fa-align-left"></i> Description</label>
+                    <textarea name="description" id="productDescription" rows="3" placeholder="Description du produit (optionnel)"></textarea>
                 </div>
 
                 <button type="submit" class="btn-submit">
@@ -711,64 +938,189 @@ $unites_result = mysqli_query($conn, $unites_query);
         </div>
     </div>
 
+    <!-- Modal Ajouter Unité -->
+    <div class="modal" id="unitModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Ajouter une unité</h2>
+                <button class="close-modal" onclick="closeModal('unitModal')">×</button>
+            </div>
+            <form method="POST" id="unitForm">
+                <input type="hidden" name="action" value="ajouter_unite">
+                <input type="hidden" name="produit_id" id="unitProduitId">
+
+                <div class="form-group">
+                    <label><i class="fas fa-ruler"></i> Unité *</label>
+                    <select name="unite_id" id="unitUniteId" required>
+                        <option value="">-- Choisir une unité --</option>
+                        <?php 
+                        mysqli_data_seek($unites_result, 0);
+                        while ($unite = mysqli_fetch_assoc($unites_result)): ?>
+                        <option value="<?php echo $unite['id']; ?>">
+                            <?php echo htmlspecialchars($unite['nom']) . ' (' . $unite['symbole'] . ')'; ?>
+                        </option>
+                        <?php endwhile; ?>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> Prix unitaire (Ar) *</label>
+                    <input type="number" name="prix_unitaire" id="unitPrix" step="0.01" min="0" required placeholder="Ex: 25000">
+                </div>
+
+                <button type="submit" class="btn-submit">
+                    <i class="fas fa-plus"></i> Ajouter l'unité
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Modifier Prix -->
+    <div class="modal" id="priceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Modifier le prix</h2>
+                <button class="close-modal" onclick="closeModal('priceModal')">×</button>
+            </div>
+            <form method="POST" id="priceForm">
+                <input type="hidden" name="action" value="modifier_prix">
+                <input type="hidden" name="pu_id" id="pricePuId">
+
+                <div class="form-group">
+                    <label><i class="fas fa-info-circle"></i> Unité</label>
+                    <input type="text" id="priceUniteName" readonly style="background:#f5f5f5;">
+                </div>
+
+                <div class="form-group">
+                    <label><i class="fas fa-money-bill-wave"></i> Nouveau prix (Ar) *</label>
+                    <input type="number" name="prix_unitaire" id="pricePrixUnitaire" step="0.01" min="0" required placeholder="Ex: 25000">
+                </div>
+
+                <button type="submit" class="btn-submit">
+                    <i class="fas fa-save"></i> Mettre à jour le prix
+                </button>
+            </form>
+        </div>
+    </div>
+
     <script>
-        function openModal(mode) {
-            const modal = document.getElementById('productModal');
-            const form = document.getElementById('productForm');
-            const modalTitle = document.getElementById('modalTitle');
-            
-            form.reset();
-            
-            if(mode === 'add') {
-                modalTitle.textContent = 'Ajouter un produit';
-                document.getElementById('formAction').value = 'ajouter';
+        function openModal(type, produitId = null) {
+            if (type === 'add-product') {
+                document.getElementById('productForm').reset();
+                document.getElementById('productModalTitle').textContent = 'Nouveau Produit';
+                document.getElementById('productAction').value = 'ajouter_produit';
+                document.getElementById('productModal').classList.add('active');
+            } 
+            else if (type === 'add-unit') {
+                document.getElementById('unitForm').reset();
+                document.getElementById('unitProduitId').value = produitId;
+                document.getElementById('unitModal').classList.add('active');
             }
-            
-            modal.classList.add('active');
         }
 
-        function closeModal() {
-            document.getElementById('productModal').classList.remove('active');
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
         }
 
         function editProduct(produit) {
-            document.getElementById('modalTitle').textContent = 'Modifier le produit';
-            document.getElementById('formAction').value = 'modifier';
+            document.getElementById('productModalTitle').textContent = 'Modifier le Produit';
+            document.getElementById('productAction').value = 'modifier_produit';
             document.getElementById('productId').value = produit.id;
-            document.getElementById('nom').value = produit.nom;
-            document.getElementById('description').value = produit.description || '';
-            document.getElementById('quantite_unite').value = produit.quantite_unite;
-            document.getElementById('unite_id').value = produit.unite_id;
-            document.getElementById('prix_unitaire').value = produit.prix_unitaire;
-            document.getElementById('stock_disponible').value = produit.stock_disponible;
-            document.getElementById('seuil_alerte').value = produit.seuil_alerte;
-            
+            document.getElementById('productNom').value = produit.nom;
+            document.getElementById('productDescription').value = produit.description || '';
             document.getElementById('productModal').classList.add('active');
         }
 
+        function editPrice(pu) {
+            document.getElementById('pricePuId').value = pu.id;
+            document.getElementById('priceUniteName').value = pu.unite_nom + ' (' + pu.unite_symbole + ')';
+            document.getElementById('pricePrixUnitaire').value = pu.prix_unitaire;
+            document.getElementById('priceModal').classList.add('active');
+        }
+
         function deleteProduct(id) {
-            if(confirm('Êtes-vous sûr de vouloir supprimer ce produit ?')) {
+            if (confirm('⚠️ Êtes-vous sûr de vouloir supprimer ce produit ?\nToutes les unités associées seront également supprimées.')) {
                 window.location.href = 'produits.php?supprimer=' + id;
             }
         }
 
-        // Fermer le modal en cliquant à l'extérieur
-        document.getElementById('productModal').addEventListener('click', function(e) {
-            if(e.target === this) {
-                closeModal();
+        function deleteUnit(puId) {
+            if (confirm('Êtes-vous sûr de vouloir supprimer cette unité ?')) {
+                window.location.href = 'produits.php?supprimer_unite=' + puId;
             }
+        }
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) closeModal(this.id);
+            });
         });
 
-        // Auto-hide alert messages
-        <?php if($message): ?>
-        setTimeout(function() {
+        <?php if ($message): ?>
+        setTimeout(() => {
             const alert = document.querySelector('.alert');
-            if(alert) {
+            if (alert) {
+                alert.style.transition = 'opacity 0.4s ease';
                 alert.style.opacity = '0';
-                setTimeout(() => alert.remove(), 300);
+                setTimeout(() => alert.remove(), 400);
             }
         }, 5000);
         <?php endif; ?>
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.product-card').forEach((card, i) => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                setTimeout(() => {
+                    card.style.transition = 'all 0.5s ease';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, i * 80);
+            });
+        });
+
+        function searchProducts() {
+            const input = document.getElementById('searchInput');
+            const filter = input.value.toLowerCase().trim();
+            const cards = document.querySelectorAll('.product-card');
+            let visibleCount = 0;
+
+            cards.forEach(card => {
+                const productName = card.querySelector('.product-name').textContent.toLowerCase();
+                const productDescription = card.querySelector('.product-description')?.textContent.toLowerCase() || '';
+                const units = Array.from(card.querySelectorAll('.unit-name')).map(el => el.textContent.toLowerCase()).join(' ');
+                
+                const searchText = productName + ' ' + productDescription + ' ' + units;
+
+                if (searchText.includes(filter)) {
+                    card.style.display = '';
+                    visibleCount++;
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+
+            // Afficher un message si aucun résultat
+            const grid = document.querySelector('.products-grid');
+            let noResult = document.getElementById('no-search-result');
+            
+            if (visibleCount === 0 && filter !== '') {
+                if (!noResult) {
+                    noResult = document.createElement('div');
+                    noResult.id = 'no-search-result';
+                    noResult.className = 'empty-state';
+                    noResult.style.gridColumn = '1 / -1';
+                    noResult.innerHTML = `
+                        <i class="fas fa-search"></i>
+                        <h3>Aucun produit trouvé</h3>
+                        <p>Essayez avec d'autres mots-clés</p>
+                    `;
+                    grid.appendChild(noResult);
+                }
+            } else if (noResult) {
+                noResult.remove();
+            }
+        }
     </script>
 </body>
 </html>
